@@ -8,7 +8,7 @@
 
 Claude Agent Skills 集合，包含多个可复用的领域特定技能。
 
-## 📁 目录结构
+## 目录结构
 
 ```
 claude-skills/
@@ -20,26 +20,37 @@ claude-skills/
 └── LICENSE
 ```
 
-## 🚀 安装
+## 安装
 
-### 方法 1: 链接到 ~/.claude/skills (推荐)
+### 方法 1: 安装到 ~/.claude/skills (推荐，全局生效)
 
 ```bash
-# 克隆仓库
+# 1. 克隆仓库
 git clone https://github.com/ly87ing/claude-skills.git
+cd claude-skills
 
-# 链接特定 skill 到 Claude 全局目录
-ln -s $(pwd)/claude-skills/performance-troubleshoot ~/.claude/skills/performance-troubleshoot
+# 2. 创建 Claude skills 目录 (如果不存在)
+mkdir -p ~/.claude/skills
+
+# 3. 复制 skill 到 Claude 全局目录
+cp -r performance-troubleshoot ~/.claude/skills/
 ```
 
-### 方法 2: 复制到项目目录
+### 方法 2: 安装到项目目录 (仅对该项目生效)
 
 ```bash
-# 复制到项目的 .agent/skills 目录
-cp -r claude-skills/performance-troubleshoot your-project/.agent/skills/
+# 1. 克隆仓库
+git clone https://github.com/ly87ing/claude-skills.git
+cd claude-skills
+
+# 2. 复制到目标项目的 .agent/skills 目录
+mkdir -p /path/to/your-project/.agent/skills
+cp -r performance-troubleshoot /path/to/your-project/.agent/skills/
 ```
 
-## 📋 可用 Skills
+> **注意**: 安装后需要重启 Claude 才能加载新的 Skill。
+
+## 可用 Skills
 
 ### [performance-troubleshoot](./performance-troubleshoot/)
 
@@ -65,21 +76,21 @@ cp -r claude-skills/performance-troubleshoot your-project/.agent/skills/
 
 **功能特性**:
 
-- 🔍 渐进式问题诊断 - 3轮对话逐步收集信息
-- 🌳 智能决策树 - 症状→诊断→处方自动推荐
-- 📋 完整检查清单 - 14类 150+ 检查点
-- 🛠️ 诊断工具推荐 - arthas, async-profiler, jstack 等
-- ❌ 反模式警示 - 5个典型错误示例
+- 渐进式问题诊断 - 3轮对话逐步收集信息
+- 智能决策树 - 症状→诊断→处方自动推荐
+- 完整检查清单 - 14类 150+ 检查点
+- 诊断工具推荐 - arthas, async-profiler, jstack 等
+- 反模式警示 - 5个典型错误示例
 
-## 🤝 贡献
+## 贡献
 
 欢迎提交 Issue 和 Pull Request 来添加新的 Skills！
 
-## 📄 许可证
+## 许可证
 
 [MIT License](LICENSE)
 
-## 🔗 参考
+## 参考
 
 - [Claude Agent Skills 官方文档](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview)
 - [Skills Best Practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices)
