@@ -14,6 +14,7 @@ import {
     SYMPTOM_TO_SECTIONS,
     QUICK_DIAGNOSIS,
     ANTI_PATTERNS,
+    REPORT_TEMPLATE,
     type ChecklistItem
 } from './checklist-data.js';
 
@@ -104,7 +105,7 @@ server.tool(
 server.tool(
     'get_diagnosis',
     {
-        symptom: z.enum(['memory', 'cpu', 'slow', 'resource', 'backlog'])
+        symptom: z.enum(['memory', 'cpu', 'slow', 'resource', 'backlog', 'gc'])
             .describe('单个症状类型'),
 
         includeAntiPatterns: z.boolean()
@@ -131,9 +132,10 @@ server.tool(
         const antiPatternMap: Record<string, string[]> = {
             memory: ['循环创建对象', '无界队列'],
             cpu: ['锁内IO'],
-            slow: ['锁内IO', 'N+1 查询'],
+            slow: ['锁内IO', 'N+1 查询', '深度分页'],
             resource: ['无界队列', '缓存穿透'],
-            backlog: []
+            backlog: ['消息重复消费', '消费者阻塞'],
+            gc: ['循环创建对象', 'Stream 短集合']
         };
 
         const relevantPatterns = includeAntiPatterns
@@ -151,6 +153,7 @@ server.tool(
                         symptomDescription: SYMPTOM_DESCRIPTIONS[symptom as keyof typeof SYMPTOM_DESCRIPTIONS] || symptom,
                         possibleCauses: diagnosis.causes,
                         recommendedPatterns: diagnosis.patterns,
+                        diagnosticTools: diagnosis.tools,
                         relatedSections: SYMPTOM_TO_SECTIONS[symptom] || [],
                         ...(includeAntiPatterns && relevantPatterns.length > 0
                             ? { antiPatterns: relevantPatterns }
@@ -169,7 +172,7 @@ server.tool(
 server.tool(
     'search_code_patterns',
     {
-        symptom: z.enum(['memory', 'cpu', 'slow', 'resource', 'backlog'])
+        symptom: z.enum(['memory', 'cpu', 'slow', 'resource', 'backlog', 'gc'])
             .describe('要搜索的症状类型'),
 
         preferLsp: z.boolean()
@@ -204,6 +207,10 @@ server.tool(
             backlog: {
                 lsp: ['BlockingQueue', 'LinkedBlockingQueue', 'Consumer', 'Subscriber'],
                 grep: ['BlockingQueue|@RabbitListener|@KafkaListener|@StreamListener']
+            },
+            gc: {
+                lsp: ['ArrayList', 'HashMap', 'StringBuilder', 'BigDecimal', 'Stream'],
+                grep: ['new ArrayList|new HashMap|new StringBuilder|new BigDecimal|\.stream\\(\\)']
             }
         };
 
@@ -280,6 +287,45 @@ server.tool(
                         }))
                     }
                 }, null, 2)
+            }]
+        };
+    }
+);
+
+/**
+ * 工具 5: get_template
+ * 获取报告模板
+ */
+server.tool(
+    'get_template',
+    {
+        format: z.enum(['markdown', 'json'])
+            .default('markdown')
+            .describe('模板格式: markdown(直接使用) 或 json(结构化)')
+    },
+    async ({ format }) => {
+        if (format === 'json') {
+            return {
+                content: [{
+                    type: 'text' as const,
+                    text: JSON.stringify({
+                        success: true,
+                        data: {
+                            sections: [
+                                { name: '问题总览', fields: ['优先级', '问题', '位置', '影响'] },
+                                { name: '问题详情', fields: ['位置', '放大倍数', '问题代码', '解决方案', '预期效果'] },
+                                { name: '行动清单', fields: ['优先级', '修复操作'] }
+                            ]
+                        }
+                    }, null, 2)
+                }]
+            };
+        }
+
+        return {
+            content: [{
+                type: 'text' as const,
+                text: REPORT_TEMPLATE
             }]
         };
     }

@@ -36,11 +36,12 @@ description: Diagnoses Java performance issues including slow response, high CPU
 **症状映射**：
 | 用户描述 | MCP 参数 |
 |----------|----------|
-| 内存暴涨/OOM/GC频繁 | `memory` |
+| 内存暴涨/OOM | `memory` |
 | CPU高 | `cpu` |
 | 响应慢/超时 | `slow` |
 | 连接池满/线程池满 | `resource` |
 | 消息积压 | `backlog` |
+| GC频繁/Stop-the-World | `gc` |
 
 **调用顺序**：
 1. `mcp__java-perf__get_diagnosis` - 快速诊断
