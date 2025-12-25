@@ -1,6 +1,6 @@
 ---
 name: java-perf
-description: Diagnoses Java performance issues including slow response, high CPU, memory spikes, OOM, GC pressure, resource exhaustion, and message backlog. Use when user reports 响应慢, CPU高, 内存暴涨, 内存溢出, GC频繁, 连接池满, 线程池满, 超时, 消息积压, or needs 性能排查/性能分析.
+description: Diagnoses Java performance issues. 触发词：性能问题, 分析性能, 性能排查, 性能分析, 性能优化, 响应慢, CPU高, 内存暴涨, 内存溢出, OOM, GC频繁, 连接池满, 线程池满, 超时, 消息积压, 卡顿, 延迟高, 占用高. Keywords: performance issue, slow response, high CPU, memory spike, GC pressure, resource exhaustion, troubleshoot performance.
 ---
 
 # Java 性能问题排查 Skill
