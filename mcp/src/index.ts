@@ -272,28 +272,62 @@ server.tool(
             .describe('返回的最大模式数量')
     },
     async ({ symptom, preferLsp, maxPatterns }) => {
-        const lspKeywords: Record<string, string[]> = {
-            memory: ['ThreadLocal', 'ConcurrentHashMap', 'HashMap', 'static Map'],
-            cpu: ['synchronized', 'ReentrantLock', 'Atomic', 'volatile'],
-            slow: ['HttpClient', 'RestTemplate', 'WebClient', '@Transactional'],
-            resource: ['ThreadPoolExecutor', 'DataSource', 'ConnectionPool'],
-            backlog: ['@KafkaListener', '@RabbitListener', 'BlockingQueue'],
-            gc: ['ArrayList', 'StringBuilder', 'BigDecimal', 'stream()']
+        const searchPatterns: Record<string, { cclsp: string[], grep: string, headLimit: number }> = {
+            memory: {
+                cclsp: ['ThreadLocal', 'ConcurrentHashMap', 'static Map'],
+                grep: 'static\\s+.*Map|ThreadLocal|ConcurrentHashMap',
+                headLimit: 30
+            },
+            cpu: {
+                cclsp: ['synchronized', 'ReentrantLock', 'Atomic'],
+                grep: 'synchronized|ReentrantLock|AtomicInteger',
+                headLimit: 30
+            },
+            slow: {
+                cclsp: ['HttpClient', 'RestTemplate', '@Transactional'],
+                grep: 'HttpClient|RestTemplate|@FeignClient|getConnection',
+                headLimit: 30
+            },
+            resource: {
+                cclsp: ['ThreadPoolExecutor', 'DataSource', 'Executors'],
+                grep: 'newCachedThreadPool|newFixedThreadPool|DataSource',
+                headLimit: 20
+            },
+            backlog: {
+                cclsp: ['@KafkaListener', '@RabbitListener', 'BlockingQueue'],
+                grep: '@KafkaListener|@RabbitListener|BlockingQueue',
+                headLimit: 20
+            },
+            gc: {
+                cclsp: ['ArrayList', 'StringBuilder', 'stream()'],
+                grep: 'new ArrayList|new StringBuilder|new HashMap',
+                headLimit: 30
+            }
         };
 
-        const keywords = lspKeywords[symptom]?.slice(0, maxPatterns) || [];
+        const pattern = searchPatterns[symptom];
 
         return {
             content: [{
                 type: 'text' as const,
                 text: JSON.stringify({
                     success: true,
-                    data: {
-                        symptom,
-                        cclspKeywords: keywords,
-                        usage: 'mcp__cclsp__find_symbol({ query: "关键词" })',
-                        note: '禁止使用 grep/Search，必须使用 cclsp'
-                    }
+                    symptom,
+                    searchOptions: {
+                        option1_cclsp: {
+                            method: 'mcp__cclsp__find_symbol',
+                            keywords: pattern?.cclsp.slice(0, maxPatterns) || [],
+                            tokenCost: '低'
+                        },
+                        option2_grep: {
+                            method: 'grep_search',
+                            pattern: pattern?.grep || '',
+                            headLimit: pattern?.headLimit || 30,
+                            usage: `grep_search({ Query: "${pattern?.grep}", SearchPath: "./", MatchPerLine: true })`,
+                            tokenCost: '中'
+                        }
+                    },
+                    recommendation: '优先尝试 cclsp，若失败再用 grep（必须加 head_limit）'
                 }, null, 2)
             }]
         };
@@ -500,21 +534,25 @@ server.tool(
             };
         }
 
-        // 3. 搜索建议（只返回 cclsp 关键词，不返回 grep）
+        // 3. 搜索建议（cclsp + grep 两种选项）
         if (fields.includes('patterns')) {
-            const lspKeywords: Record<string, string[]> = {
-                memory: ['ThreadLocal', 'ConcurrentHashMap', 'static Map'],
-                cpu: ['synchronized', 'ReentrantLock', 'Atomic'],
-                slow: ['HttpClient', 'RestTemplate', '@Transactional'],
-                resource: ['ThreadPoolExecutor', 'DataSource', 'Executors'],
-                backlog: ['@KafkaListener', '@RabbitListener', 'BlockingQueue'],
-                gc: ['ArrayList', 'StringBuilder', 'stream()']
+            const searchPatterns: Record<string, { cclsp: string[], grep: string, headLimit: number }> = {
+                memory: { cclsp: ['ThreadLocal', 'ConcurrentHashMap'], grep: 'static.*Map|ThreadLocal', headLimit: 30 },
+                cpu: { cclsp: ['synchronized', 'ReentrantLock'], grep: 'synchronized|ReentrantLock', headLimit: 30 },
+                slow: { cclsp: ['HttpClient', 'RestTemplate'], grep: 'HttpClient|getConnection', headLimit: 30 },
+                resource: { cclsp: ['ThreadPoolExecutor', 'DataSource'], grep: 'newCachedThreadPool|DataSource', headLimit: 20 },
+                backlog: { cclsp: ['@KafkaListener', 'BlockingQueue'], grep: '@KafkaListener|@RabbitListener', headLimit: 20 },
+                gc: { cclsp: ['ArrayList', 'StringBuilder'], grep: 'new ArrayList|new HashMap', headLimit: 30 }
             };
 
-            result.cclspSearch = {
-                note: '使用 mcp__cclsp__find_symbol 逐个搜索以下关键词',
-                keywords: symptoms.flatMap(s => lspKeywords[s] || []).slice(0, 5)
-            };
+            result.searchPatterns = symptoms.map(s => {
+                const p = searchPatterns[s];
+                return p ? {
+                    symptom: s,
+                    cclsp: p.cclsp,
+                    grep: { pattern: p.grep, headLimit: p.headLimit }
+                } : null;
+            }).filter(Boolean);
         }
 
         // 4. 反模式
