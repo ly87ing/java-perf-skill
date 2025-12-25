@@ -52,21 +52,21 @@ echo -e "${GREEN}✓ MCP Server 编译完成${NC}"
 MCP_PATH="$SCRIPT_DIR/mcp/dist/index.js"
 echo -e "${GREEN}  路径: ${MCP_PATH}${NC}"
 
-# 注册 MCP 到 Claude
+# 注册 MCP 到 Claude（用户级，全局生效）
 echo ""
-echo -e "${YELLOW}[3/4] 注册 MCP 到 Claude Code...${NC}"
+echo -e "${YELLOW}[3/4] 注册 MCP 到 Claude Code（用户级）...${NC}"
 
 # 检查 claude 命令
 if command -v claude &> /dev/null; then
     # 先尝试移除旧的（忽略错误）
-    claude mcp remove java-perf 2>/dev/null || true
+    claude mcp remove java-perf --scope user 2>/dev/null || true
     
-    # 添加新的
-    claude mcp add java-perf -- node "$MCP_PATH"
-    echo -e "${GREEN}✓ MCP Server 已注册到 Claude Code${NC}"
+    # 添加新的（用户级，全局生效）
+    claude mcp add java-perf --scope user -- node "$MCP_PATH"
+    echo -e "${GREEN}✓ MCP Server 已注册到 Claude Code（用户级）${NC}"
 else
     echo -e "${YELLOW}⚠ claude 命令未找到，请手动注册 MCP:${NC}"
-    echo -e "   claude mcp add java-perf -- node ${MCP_PATH}"
+    echo -e "   claude mcp add java-perf --scope user -- node ${MCP_PATH}"
 fi
 
 # 安装 Skill
