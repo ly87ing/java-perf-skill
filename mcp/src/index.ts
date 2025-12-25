@@ -15,6 +15,7 @@ import {
     QUICK_DIAGNOSIS,
     ANTI_PATTERNS,
     REPORT_TEMPLATE,
+    SYMPTOM_COMBINATIONS,
     type ChecklistItem
 } from './checklist-data.js';
 
@@ -158,6 +159,63 @@ server.tool(
                         ...(includeAntiPatterns && relevantPatterns.length > 0
                             ? { antiPatterns: relevantPatterns }
                             : {})
+                    }
+                }, null, 2)
+            }]
+        };
+    }
+);
+
+/**
+ * 工具 2.5: get_combined_diagnosis
+ * 多症状组合诊断
+ */
+server.tool(
+    'get_combined_diagnosis',
+    {
+        symptoms: z.array(z.enum(['memory', 'cpu', 'slow', 'resource', 'backlog', 'gc']))
+            .min(2, '请提供至少2个症状进行组合诊断')
+            .max(3, '最多支持3个症状组合')
+            .describe('症状列表（2-3个）')
+    },
+    async ({ symptoms }) => {
+        // 生成所有可能的症状对组合
+        const pairs: string[] = [];
+        for (let i = 0; i < symptoms.length; i++) {
+            for (let j = i + 1; j < symptoms.length; j++) {
+                const sorted = [symptoms[i], symptoms[j]].sort();
+                pairs.push(sorted.join('+'));
+            }
+        }
+
+        // 查找匹配的组合诊断
+        const matchedDiagnoses = pairs
+            .map(pair => {
+                const diagnosis = SYMPTOM_COMBINATIONS[pair];
+                return diagnosis ? { combination: pair, ...diagnosis } : null;
+            })
+            .filter(Boolean);
+
+        // 合并相关章节
+        const allSections = new Set<string>();
+        symptoms.forEach(s => {
+            (SYMPTOM_TO_SECTIONS[s] || []).forEach(id => allSections.add(id));
+        });
+
+        return {
+            content: [{
+                type: 'text' as const,
+                text: JSON.stringify({
+                    success: true,
+                    query: { symptoms },
+                    data: {
+                        symptomCount: symptoms.length,
+                        combinationsFound: matchedDiagnoses.length,
+                        diagnoses: matchedDiagnoses,
+                        relatedSections: Array.from(allSections),
+                        recommendation: matchedDiagnoses.length > 0
+                            ? `根据症状组合，最可能的根因是：${matchedDiagnoses[0]?.rootCauses[0]?.cause}`
+                            : '未找到已知的症状组合模式，建议逐个排查'
                     }
                 }, null, 2)
             }]

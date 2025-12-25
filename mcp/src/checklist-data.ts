@@ -120,6 +120,39 @@ export const CHECKLIST_DATA: Record<string, ChecklistItem> = {
             '反射调用（高频路径使用反射未缓存 Method）',
             '装箱拆箱（Integer/Long 频繁自动装箱）'
         ]
+    },
+    '15': {
+        id: '15',
+        title: 'Spring 框架',
+        items: [
+            '@Async 默认线程池（未配置自定义线程池导致任务堆积）',
+            '@Transactional 传播问题（嵌套事务配置不当）',
+            'AOP 代理失效（同类方法调用绕过代理）',
+            'Bean 循环依赖（延迟初始化导致启动慢）',
+            '@Scheduled 单线程（默认单线程导致任务阻塞）'
+        ]
+    },
+    '16': {
+        id: '16',
+        title: 'Dubbo/RPC',
+        items: [
+            '超时设置不当（provider/consumer 超时配置冲突）',
+            '序列化开销（复杂对象未优化序列化）',
+            '线程池满（provider 线程池配置过小）',
+            '重试风暴（未配置合理重试策略）',
+            '熔断缺失（未使用 Sentinel/Hystrix 限流）'
+        ]
+    },
+    '17': {
+        id: '17',
+        title: 'MyBatis/ORM',
+        items: [
+            '一级缓存坑（同 SqlSession 内脏读）',
+            '懒加载 N+1（关联查询触发多次 SQL）',
+            '批量插入未优化（逐条 insert 应改 batch）',
+            '动态 SQL 拼接（foreach 过长导致 SQL 爆炸）',
+            'ResultMap 映射开销（复杂嵌套映射性能差）'
+        ]
     }
 };
 
@@ -127,10 +160,68 @@ export const CHECKLIST_DATA: Record<string, ChecklistItem> = {
 export const SYMPTOM_TO_SECTIONS: Record<string, string[]> = {
     'memory': ['0', '5', '6', '14'],
     'cpu': ['0', '1', '10', '14'],
-    'slow': ['2', '3', '1', '13'],
-    'resource': ['4', '5'],
+    'slow': ['2', '3', '1', '13', '15', '16', '17'],
+    'resource': ['4', '5', '15', '16'],
     'backlog': ['0', '11', '12'],
     'gc': ['5', '0', '14']
+};
+
+// 症状组合诊断
+export const SYMPTOM_COMBINATIONS: Record<string, { diagnosis: string, rootCauses: Array<{ cause: string, probability: number }> }> = {
+    'cpu+slow': {
+        diagnosis: '锁竞争或计算密集导致 CPU 高同时响应慢',
+        rootCauses: [
+            { cause: '锁竞争（synchronized/ReentrantLock）', probability: 60 },
+            { cause: '正则表达式回溯', probability: 20 },
+            { cause: 'CAS 自旋', probability: 15 },
+            { cause: '复杂算法', probability: 5 }
+        ]
+    },
+    'cpu+gc': {
+        diagnosis: '对象创建过快导致 GC 频繁和 CPU 消耗',
+        rootCauses: [
+            { cause: '循环内创建大量对象', probability: 50 },
+            { cause: 'Stream 滥用', probability: 25 },
+            { cause: '字符串拼接', probability: 20 },
+            { cause: '装箱拆箱', probability: 5 }
+        ]
+    },
+    'slow+memory': {
+        diagnosis: 'GC 暂停或大对象操作导致响应慢和内存高',
+        rootCauses: [
+            { cause: '大对象分配（全量加载）', probability: 45 },
+            { cause: '无界缓存', probability: 30 },
+            { cause: 'Full GC 暂停', probability: 20 },
+            { cause: '内存泄露', probability: 5 }
+        ]
+    },
+    'slow+resource': {
+        diagnosis: '资源池耗尽导致请求等待',
+        rootCauses: [
+            { cause: '连接池满', probability: 40 },
+            { cause: '线程池满', probability: 35 },
+            { cause: '下游服务慢', probability: 20 },
+            { cause: '资源泄露', probability: 5 }
+        ]
+    },
+    'memory+gc': {
+        diagnosis: '内存压力导致频繁 GC',
+        rootCauses: [
+            { cause: '对象创建风暴', probability: 40 },
+            { cause: '内存泄露', probability: 30 },
+            { cause: '缓存未限制大小', probability: 25 },
+            { cause: 'ThreadLocal 未清理', probability: 5 }
+        ]
+    },
+    'backlog+slow': {
+        diagnosis: '消费能力不足导致积压和延迟',
+        rootCauses: [
+            { cause: '消费者处理慢', probability: 50 },
+            { cause: '消费者内有阻塞调用', probability: 30 },
+            { cause: '并发度不足', probability: 15 },
+            { cause: '消息体过大', probability: 5 }
+        ]
+    }
 };
 
 // 快速诊断表
