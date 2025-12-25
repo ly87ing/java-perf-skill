@@ -593,6 +593,78 @@ server.tool(
     }
 );
 
+/**
+ * 工具 8: scan_project (Token 优化版)
+ * 一次调用返回完整扫描计划，减少 AI 往返次数
+ */
+server.tool(
+    'scan_project',
+    {
+        symptoms: z.array(z.enum(VALID_SYMPTOMS))
+            .min(1)
+            .describe('症状列表: memory/cpu/slow/resource/backlog/gc'),
+        projectPath: z.string()
+            .default('./')
+            .describe('项目路径，默认当前目录')
+    },
+    async ({ symptoms, projectPath }) => {
+        // 1. 获取搜索关键词
+        const searchKeywords: Record<string, string[]> = {
+            memory: ['static.*Map', 'ThreadLocal', 'ConcurrentHashMap', 'new.*\\[.*\\d{4,}'],
+            cpu: ['synchronized', 'ReentrantLock', 'while.*true', 'Pattern\\.compile'],
+            slow: ['for.*\\{.*dao\\|rpc\\|http', '@Transactional', 'getConnection'],
+            resource: ['Executors\\.new', 'DataSource', 'ConnectionPool'],
+            backlog: ['@KafkaListener', '@RabbitListener', 'BlockingQueue'],
+            gc: ['new ArrayList', 'new StringBuilder', 'stream\\(\\)']
+        };
+
+        // 2. 获取检查重点
+        const checkFocus: Record<string, string[]> = {
+            memory: ['static Map 无 TTL', 'ThreadLocal 未 remove', '大对象分配'],
+            cpu: ['锁竞争', '死循环', '正则回溯'],
+            slow: ['N+1 查询', '无超时设置', '串行调用'],
+            resource: ['无界线程池', '连接泄露', '池配置不当'],
+            backlog: ['消费者阻塞', '处理太慢', '并发度不足'],
+            gc: ['循环创建对象', '大对象进老年代', 'Stream 滥用']
+        };
+
+        // 3. 生成扫描计划
+        const scanPlan = symptoms.map(s => ({
+            symptom: s,
+            searchCommands: searchKeywords[s]?.map(kw =>
+                `mcp__cclsp__find_symbol({ query: "${kw.replace(/\\/g, '')}" })`
+            ).slice(0, 3) || [],
+            checkFocus: checkFocus[s] || [],
+            grepFallback: `grep -rn "${searchKeywords[s]?.[0] || ''}" ${projectPath} --include="*.java" | head -20`
+        }));
+
+        // 4. 生成精简报告格式
+        const reportFormat = {
+            template: '发现 N 个可疑文件，建议优先检查：1. File:Line - Issue',
+            maxFiles: 5,
+            maxLinesPerFile: 3
+        };
+
+        return {
+            content: [{
+                type: 'text' as const,
+                text: JSON.stringify({
+                    success: true,
+                    tokenOptimization: '本工具已聚合所有搜索，请按 scanPlan 顺序执行，避免重复搜索',
+                    scanPlan,
+                    reportFormat,
+                    workflow: [
+                        '1. 按 searchCommands 顺序搜索（优先 cclsp）',
+                        '2. 记录可疑文件:行号',
+                        '3. 只 Read 前 3 个最可疑文件的关键 50 行',
+                        '4. 输出精简报告'
+                    ]
+                }, null, 2)
+            }]
+        };
+    }
+);
+
 // ========== 启动服务器 ==========
 async function main() {
     const transport = new StdioServerTransport();

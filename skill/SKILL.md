@@ -45,19 +45,27 @@ description: Diagnoses Java performance issues. 触发词：性能问题, 分析
 
 ### 模式 A: 完整模式（MCP 可用）
 
-**Step 1: 获取诊断信息**
+> [!IMPORTANT]
+> **Token 优化**：使用 `scan_project` 一次获取扫描计划，避免多次往返
+
+**Step 1: 获取扫描计划（推荐）**
 ```
-mcp__java-perf__diagnose_all({
-  symptoms: ["cpu", "slow"],
-  priority: "P0",
-  compact: true
+mcp__java-perf__scan_project({
+  symptoms: ["memory", "slow"]
 })
 ```
+返回：搜索命令列表 + 检查重点 + 精简报告格式
 
-**Step 2: 代码分析**
+**Step 2: 按计划搜索（优先 cclsp）**
 ```
-mcp__cclsp__find_symbol({ query: "synchronized" })
-mcp__cclsp__find_call_hierarchy({ file: "x.java", line: 123 })
+mcp__cclsp__find_symbol({ query: "ThreadLocal" })
+mcp__cclsp__find_symbol({ query: "static Map" })
+```
+
+**Step 3: 只读关键文件（限制行数）**
+```
+view_file({ path: "x.java", startLine: 40, endLine: 90 })  // 只读 50 行
+
 ```
 
 ---
