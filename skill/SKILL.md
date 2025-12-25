@@ -17,11 +17,35 @@ description: Diagnoses Java performance issues including slow response, high CPU
 
 ---
 
+## 工具检测（重要！）
+
+> [!IMPORTANT]
+> 开始分析前，先检测 MCP 工具可用性
+
+**检测方法**：尝试调用 `mcp__java-perf__diagnose_all`
+
+**如果 MCP 不可用**，告知用户：
+
+```
+⚠️ 检测到 java-perf MCP 未安装
+
+当前可用模式：
+- [基础模式] 使用内置知识 + cclsp 代码搜索
+
+如需增强诊断能力，请安装 MCP：
+  git clone https://github.com/ly87ing/java-perf-skill.git
+  cd java-perf-skill && ./install.sh
+
+是否使用基础模式继续？
+```
+
+---
+
 ## 分析流程
 
-### Step 1: 获取诊断信息
+### 模式 A: 完整模式（MCP 可用）
 
-**优先使用 MCP 工具**（如果可用）：
+**Step 1: 获取诊断信息**
 ```
 mcp__java-perf__diagnose_all({
   symptoms: ["cpu", "slow"],
@@ -30,83 +54,113 @@ mcp__java-perf__diagnose_all({
 })
 ```
 
-返回：诊断建议 + 检查项 + 搜索关键词
-
----
-
-### Step 2: 代码分析（重要！）
-
-> [!IMPORTANT]
-> **必须使用 `mcp__cclsp__*` 工具进行代码搜索**，不要手动 grep
-
-**使用 cclsp 搜索性能问题代码**：
-
+**Step 2: 代码分析**
 ```
-# 1. 搜索符号定义
 mcp__cclsp__find_symbol({ query: "synchronized" })
-mcp__cclsp__find_symbol({ query: "ThreadLocal" })
-
-# 2. 查找引用
-mcp__cclsp__find_references({ file: "xxx.java", line: 123, column: 10 })
-```
-
-**搜索关键词**（根据症状）：
-
-| 症状 | cclsp 搜索关键词 |
-|------|------------------|
-| memory | `ThreadLocal`, `ConcurrentHashMap`, `static Map` |
-| cpu | `synchronized`, `ReentrantLock`, `AtomicInteger` |
-| slow | `HttpClient`, `RestTemplate`, `@Transactional` |
-| resource | `ThreadPoolExecutor`, `DataSource`, `newCachedThreadPool` |
-| gc | `new ArrayList`, `StringBuilder`, `stream().` |
-
-**cclsp 不可用时**，使用 grep_search：
-```
-grep_search({ Query: "synchronized", SearchPath: "./", IsRegex: false })
+mcp__cclsp__find_call_hierarchy({ file: "x.java", line: 123 })
 ```
 
 ---
 
-### Step 3: 定位问题
+### 模式 B: 基础模式（无 MCP）
 
-对于找到的可疑代码，使用 cclsp 深入分析：
+**Step 1: 症状分析**
 
-```
-# 查看调用链
-mcp__cclsp__find_call_hierarchy({ 
-  file: "Service.java", 
-  line: 50, 
-  direction: "incoming"  # 谁调用了这个方法
-})
+根据症状确定检查重点：
 
-# 查看类型定义
-mcp__cclsp__get_hover({ file: "xxx.java", line: 123, column: 10 })
-```
+| 症状 | 常见原因 | 优先检查 |
+|------|----------|----------|
+| **内存暴涨** | 无界缓存、大对象、ThreadLocal 泄露 | static Map、ThreadLocal |
+| **CPU 高** | 锁竞争、死循环、正则回溯 | synchronized、while(true) |
+| **响应慢** | N+1 查询、外部调用无超时、锁阻塞 | SQL 循环、timeout 配置 |
+| **资源耗尽** | 无界线程池、连接泄露 | Executors、DataSource |
+| **消息积压** | 消费者阻塞、处理太慢 | @KafkaListener 内的 IO |
+| **GC 频繁** | 循环创建对象、大对象进老年代 | for 循环内 new、大数组 |
 
----
+**Step 2: 代码搜索**
 
-### Step 4: 输出报告
+使用 `mcp__cclsp__find_symbol` 或 `grep_search`：
 
-每个问题必须包含：
-1. **位置**：`文件:行号`（用 cclsp 确认）
-2. **量化**：调用次数、放大倍数
-3. **修复代码**：可直接应用
+| 症状 | 搜索关键词 |
+|------|-----------|
+| memory | `ThreadLocal`, `static.*Map`, `ConcurrentHashMap` |
+| cpu | `synchronized`, `ReentrantLock`, `while.*true` |
+| slow | `HttpClient`, `RestTemplate`, `@Transactional`, `for.*dao` |
+| resource | `newCachedThreadPool`, `DataSource`, `getConnection` |
+| backlog | `@KafkaListener`, `@RabbitListener`, `BlockingQueue` |
+| gc | `new ArrayList`, `new StringBuilder`, `stream().` |
 
----
-
-## 内置速查表（MCP 不可用时）
-
-<details>
-<summary>🔧 P0 验证命令</summary>
+**Step 3: 验证命令**
 
 | 症状 | 验证命令 |
 |------|----------|
 | 内存 | `jmap -histo:live PID | head -20` |
 | CPU | `jstack PID | grep -A 20 "BLOCKED"` |
+| 锁 | `jstack PID | grep "deadlock"` |
 | 慢 | `arthas: trace 类名 方法名` |
 | 资源 | `lsof -p PID | wc -l` |
 
+**Step 4: 常见问题模式**
+
+<details>
+<summary>🔥 锁竞争（CPU高 + 响应慢）</summary>
+
+**特征**：多线程 BLOCKED 状态
+**搜索**：`synchronized`, `ReentrantLock`
+**验证**：`jstack | grep BLOCKED`
+**修复**：减小锁粒度、读写锁分离、无锁算法
+
 </details>
+
+<details>
+<summary>🔥 N+1 查询（响应慢）</summary>
+
+**特征**：循环内单条 SQL
+**搜索**：`for.*findById`, `forEach.*dao`
+**验证**：开启 SQL 日志观察重复 SQL
+**修复**：IN 批量查询、JOIN 查询
+
+</details>
+
+<details>
+<summary>🔥 无界缓存（内存暴涨）</summary>
+
+**特征**：static Map 只增不删
+**搜索**：`static.*Map.*=.*new`
+**验证**：`jmap -histo:live | grep HashMap`
+**修复**：Caffeine/Guava Cache 带 TTL
+
+</details>
+
+<details>
+<summary>🔥 ThreadLocal 泄露（内存 + OOM）</summary>
+
+**特征**：ThreadLocal.set() 后无 remove()
+**搜索**：`ThreadLocal` 检查配对
+**验证**：MAT 分析 ThreadLocalMap
+**修复**：finally 中 remove()
+
+</details>
+
+<details>
+<summary>🔥 无界线程池（资源耗尽）</summary>
+
+**特征**：newCachedThreadPool
+**搜索**：`Executors.newCached`
+**验证**：`arthas: thread -n 10`
+**修复**：ThreadPoolExecutor 有界
+
+</details>
+
+---
+
+### Step 5: 输出报告
+
+每个问题必须包含：
+1. **位置**：`文件:行号`
+2. **原因**：为什么会有这个问题
+3. **量化**：调用次数、放大倍数
+4. **修复代码**：可直接应用
 
 ---
 
@@ -115,22 +169,17 @@ mcp__cclsp__get_hover({ file: "xxx.java", line: 123, column: 10 })
 ### 用户
 > 系统响应慢，CPU 也很高
 
-### Claude 分析流程
+### Claude（完整模式）
+```
+mcp__java-perf__diagnose_all({ symptoms: ["cpu", "slow"], priority: "P0" })
+mcp__cclsp__find_symbol({ query: "synchronized" })
+→ 输出修复方案
+```
 
-1. **获取诊断**：
-   ```
-   mcp__java-perf__diagnose_all({ symptoms: ["cpu", "slow"], priority: "P0" })
-   ```
-
-2. **搜索可疑代码**：
-   ```
-   mcp__cclsp__find_symbol({ query: "synchronized" })
-   mcp__cclsp__find_symbol({ query: "ReentrantLock" })
-   ```
-
-3. **分析调用链**：
-   ```
-   mcp__cclsp__find_call_hierarchy({ file: "锁方法.java", line: 行号 })
-   ```
-
-4. **输出修复方案**
+### Claude（基础模式）
+```
+分析：cpu + slow → 可能锁竞争(60%)
+搜索：synchronized, ReentrantLock
+验证：jstack | grep BLOCKED
+→ 定位问题 → 输出修复方案
+```
