@@ -187,16 +187,42 @@ export const CHECKLIST_DATA: Record<string, ChecklistSection> = {
             { desc: '动态 SQL 过长', verify: '检查 foreach 元素数量', threshold: '> 1000 需分批', why: 'SQL 太长导致解析慢或超限' },
             { desc: 'ResultMap 映射开销', verify: '检查复杂嵌套映射', why: '复杂映射反射开销大' }
         ]
+    },
+    '18': {
+        id: '18',
+        title: '放大效应进阶',
+        priority: 'P0',
+        items: [
+            { desc: '惊群效应（缓存失效时 N 线程同时查库）', verify: '搜索 cache.get 后直接 db.query，无锁保护', fix: 'Mutex/Singleflight 或分布式锁', why: '1000 并发 x 缓存失效 = 1000 次 DB 查询，应该只允许 1 个线程查' },
+            { desc: '扇出放大（1 请求调 N 个下游）', verify: '统计单接口内 RPC/HTTP 调用数', threshold: '扇出 > 5 需关注', fix: '并行调用 + 超时控制', why: '串行调用 10 个下游各 100ms = 1s，并行只需 100ms' },
+            { desc: '排队放大（任务堆积导致等待时间 > 处理时间）', verify: 'arthas: thread 检查线程池队列大小', threshold: '队列 > 100 需关注', why: '处理 10ms 但排队 1s，用户感知是 1.01s' },
+            { desc: '热点 Key 放大（分片不均导致单点压力）', verify: '检查 Redis/DB 分片 key 分布', fix: '加随机后缀分散', why: '100 万请求打到同一分片，该分片成为瓶颈' },
+            { desc: '超时放大（超时配置过长占用资源）', verify: '搜索 timeout 配置 > 10s', fix: '超时 3-5s，快速失败', why: '超时 30s = 线程被占 30s，10 个慢请求耗尽线程池' },
+            { desc: '连接放大（每请求新建连接）', verify: '搜索 new HttpClient/new Connection', fix: '使用连接池', why: 'TCP 握手 + TLS 握手 = 100-500ms，连接池复用只需 1ms' }
+        ]
+    },
+    '19': {
+        id: '19',
+        title: '级联故障防护',
+        priority: 'P0',
+        items: [
+            { desc: '舱壁隔离缺失（核心与非核心共用线程池）', verify: '检查是否所有业务用同一个线程池', fix: '按业务域隔离线程池', why: '非核心慢接口拖垮线程池 → 核心接口也无法处理' },
+            { desc: '过载保护缺失（无 Load Shedding）', verify: '检查是否有 CPU/Memory 阈值保护', fix: 'Sentinel/自定义过载保护', why: '系统满载还接受请求 → 雪崩' },
+            { desc: '入口限流缺失（无 QPS 限制）', verify: '搜索 @RateLimiter/Sentinel 配置', fix: 'Guava RateLimiter/Sentinel', why: '突发流量直接打到后端 → 压垮系统' },
+            { desc: '快速失败缺失（超时不中断）', verify: '检查 Future.get 是否有超时', fix: 'get(timeout) + cancel(true)', why: '下游超时但任务不中断 → 资源持续被占用' },
+            { desc: '熔断缺失（下游故障持续调用）', verify: '检查 Hystrix/Resilience4j/Sentinel 配置', fix: '配置熔断器', why: '下游挂了还持续调用 → 放大故障 + 阻塞调用方' },
+            { desc: 'DNS 缓存缺失（每次请求 DNS 解析）', verify: '检查 JVM DNS 缓存配置', fix: 'networkaddress.cache.ttl=60', why: '每次 DNS 解析 10-100ms，缓存后 0ms' }
+        ]
     }
 };
 
 // 症状到章节的映射
 export const SYMPTOM_TO_SECTIONS: Record<string, string[]> = {
-    'memory': ['0', '5', '6', '14'],
-    'cpu': ['0', '1', '10', '14'],
-    'slow': ['2', '3', '1', '13', '15', '16', '17'],
-    'resource': ['4', '5', '15', '16'],
-    'backlog': ['0', '11', '12'],
+    'memory': ['0', '5', '6', '14', '18'],
+    'cpu': ['0', '1', '10', '14', '18'],
+    'slow': ['2', '3', '1', '13', '15', '16', '17', '18', '19'],
+    'resource': ['4', '5', '15', '16', '18', '19'],
+    'backlog': ['0', '11', '12', '18'],
     'gc': ['5', '0', '14']
 };
 
