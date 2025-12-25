@@ -77,18 +77,36 @@ mcp__cclsp__find_call_hierarchy({ file: "x.java", line: 123 })
 | **消息积压** | 消费者阻塞、处理太慢 | @KafkaListener 内的 IO |
 | **GC 频繁** | 循环创建对象、大对象进老年代 | for 循环内 new、大数组 |
 
-**Step 2: 代码搜索**
+**Step 2: 代码搜索（强制使用 LSP）**
 
-使用 `mcp__cclsp__find_symbol` 或 `grep_search`：
+> [!CAUTION]
+> **必须使用 `mcp__cclsp__find_symbol` 进行代码搜索**
+> 禁止直接使用 grep，除非 cclsp 明确失败
 
-| 症状 | 搜索关键词 |
-|------|-----------|
-| memory | `ThreadLocal`, `static.*Map`, `ConcurrentHashMap` |
-| cpu | `synchronized`, `ReentrantLock`, `while.*true` |
-| slow | `HttpClient`, `RestTemplate`, `@Transactional`, `for.*dao` |
-| resource | `newCachedThreadPool`, `DataSource`, `getConnection` |
+```
+# 强制使用 cclsp
+mcp__cclsp__find_symbol({ query: "synchronized" })
+mcp__cclsp__find_symbol({ query: "ThreadLocal" })
+
+# 找到符号后，分析调用链
+mcp__cclsp__find_call_hierarchy({ file: "x.java", line: 123, direction: "incoming" })
+```
+
+**搜索关键词**：
+| 症状 | cclsp 搜索（必须） |
+|------|-------------------|
+| memory | `ThreadLocal`, `ConcurrentHashMap`, `static Map` |
+| cpu | `synchronized`, `ReentrantLock`, `Atomic` |
+| slow | `HttpClient`, `RestTemplate`, `@Transactional` |
+| resource | `ThreadPoolExecutor`, `DataSource`, `newCachedThreadPool` |
 | backlog | `@KafkaListener`, `@RabbitListener`, `BlockingQueue` |
-| gc | `new ArrayList`, `new StringBuilder`, `stream().` |
+| gc | `ArrayList`, `StringBuilder`, `stream` |
+
+**仅当 cclsp 失败时**，使用 grep_search（需说明原因）：
+```
+// cclsp 失败原因：LSP 服务未启动
+grep_search({ Query: "synchronized", SearchPath: "./", MatchPerLine: true })
+```
 
 **Step 3: 验证命令**
 
