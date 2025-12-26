@@ -58,12 +58,24 @@ echo -e "${YELLOW}[3/4] 注册 MCP 到 Claude Code（用户级）...${NC}"
 
 # 检查 claude 命令
 if command -v claude &> /dev/null; then
-    # 先尝试移除旧的（忽略错误）
+    # 强制移除所有旧注册（用户级 + 项目级）
+    echo "  清理旧注册..."
     claude mcp remove java-perf --scope user 2>/dev/null || true
+    claude mcp remove java-perf --scope project 2>/dev/null || true
+    sleep 1  # 等待清理完成
     
-    # 添加新的（用户级，全局生效）
+    # 重新注册（用户级，全局生效）
+    echo "  注册 MCP Server..."
     claude mcp add java-perf --scope user -- node "$MCP_PATH"
-    echo -e "${GREEN}✓ MCP Server 已注册到 Claude Code（用户级）${NC}"
+    
+    # 验证注册
+    echo "  验证连接..."
+    sleep 2  # 等待服务启动
+    if claude mcp list 2>&1 | grep -q "java-perf.*Connected"; then
+        echo -e "${GREEN}✓ MCP Server 已注册并验证连接成功${NC}"
+    else
+        echo -e "${YELLOW}⚠ MCP Server 已注册，但可能需要重启 Claude Code${NC}"
+    fi
 else
     echo -e "${YELLOW}⚠ claude 命令未找到，请手动注册 MCP:${NC}"
     echo -e "   claude mcp add java-perf --scope user -- node ${MCP_PATH}"

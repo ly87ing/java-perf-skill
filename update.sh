@@ -64,9 +64,32 @@ fi
 cp -r "$SKILL_SOURCE" "$SKILL_TARGET"
 echo -e "${GREEN}✓ Skill 更新完成${NC}"
 
+# 重新注册 MCP（确保使用最新编译版本）
+echo ""
+echo -e "${YELLOW}[4/5] 重新注册 MCP Server...${NC}"
+MCP_PATH="$SCRIPT_DIR/mcp/dist/index.js"
+
+if command -v claude &> /dev/null; then
+    # 清理并重新注册
+    claude mcp remove java-perf --scope user 2>/dev/null || true
+    claude mcp remove java-perf --scope project 2>/dev/null || true
+    sleep 1
+    claude mcp add java-perf --scope user -- node "$MCP_PATH"
+    
+    # 验证
+    sleep 2
+    if claude mcp list 2>&1 | grep -q "java-perf.*Connected"; then
+        echo -e "${GREEN}✓ MCP Server 重新注册并验证成功${NC}"
+    else
+        echo -e "${YELLOW}⚠ MCP Server 已注册，可能需要重启 Claude Code${NC}"
+    fi
+else
+    echo -e "${YELLOW}⚠ 跳过 MCP 注册（claude 命令未找到）${NC}"
+fi
+
 # 显示更新日志
 echo ""
-echo -e "${YELLOW}[4/4] 最近更新日志...${NC}"
+echo -e "${YELLOW}[5/5] 最近更新日志...${NC}"
 git log --oneline -5 2>/dev/null || true
 
 # 完成
@@ -77,5 +100,5 @@ echo "║           ✓ 更新完成！                     ║"
 echo "╚════════════════════════════════════════════╝"
 echo -e "${NC}"
 echo ""
-echo "注意: MCP Server 已自动重新编译，新功能将在下次调用时生效"
+echo "新功能将在下次调用时生效"
 echo ""
