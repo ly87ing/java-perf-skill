@@ -3,211 +3,110 @@ name: java-perf
 description: Diagnoses Java performance issues. 触发词：性能问题, 分析性能, 性能排查, 性能分析, 性能优化, 响应慢, CPU高, 内存暴涨, 内存溢出, OOM, GC频繁, 连接池满, 线程池满, 超时, 消息积压, 卡顿, 延迟高, 占用高. Keywords: performance issue, slow response, high CPU, memory spike, GC pressure, resource exhaustion, troubleshoot performance.
 ---
 
-# Java 性能问题排查 Skill
+# Java Performance Expert (Radar-Sniper Protocol)
 
-## 信息收集
-
-若用户已提供 **代码路径 + 症状**，直接进入分析。否则询问：
-
-```
-收到。请告诉我：
-- 症状：内存暴涨 / CPU高 / 响应慢 / 资源耗尽 / 消息积压 / GC频繁（可多选）
-- 代码路径：（留空=当前目录）
-```
+> **核心原则**：雷达扫描（0 Token）→ 狙击验证（LSP）→ 法医取证（可选）
 
 ---
 
-## 工具检测（重要！）
+## Phase 1: 🛰️ 雷达扫描 (0 Token)
 
 > [!IMPORTANT]
-> 开始分析前，先检测 MCP 工具可用性
-
-**检测方法**：尝试调用 `mcp__java-perf__diagnose_all`
-
-**如果 MCP 不可用**，告知用户：
+> **必须先执行雷达扫描**，不要直接搜索文件或使用 grep
 
 ```
-⚠️ 检测到 java-perf MCP 未安装
-
-当前可用模式：
-- [基础模式] 使用内置知识 + cclsp 代码搜索
-
-如需增强诊断能力，请安装 MCP：
-  git clone https://github.com/ly87ing/java-perf-skill.git
-  cd java-perf-skill && ./install.sh
-
-是否使用基础模式继续？
+mcp__java-perf__scan_source_code({
+  code: "文件内容",
+  filePath: "xxx.java"
+})
 ```
 
----
+**输出**：嫌疑点列表（文件:行号 + 类型）
 
-## 分析流程
-
-### 模式 A: 完整模式（MCP 可用）
-
-> [!IMPORTANT]
-> **推荐使用 Omni-Engine 全能诊断**：一次调用完成日志分析+代码审计+证据链匹配
-
-**方案 1: 🚀 Omni-Engine 全能诊断（首选）**
+**全局扫描**（推荐）：
 ```
 mcp__java-perf__java_perf_investigation({
   codePath: "./",
-  evidencePath: "./logs",     // 可选：日志/截图目录
-  symptoms: ["memory", "slow"] // 可选：症状
+  symptoms: ["memory", "cpu"]
 })
 ```
-返回：根因锁定 + 潜在风险 + 日志分析 + 图片
-
-**方案 2: 分步诊断**
-```
-// Step 1: 获取扫描计划
-mcp__java-perf__scan_project({ symptoms: ["memory"] })
-
-// Step 2: 按计划搜索
-mcp__cclsp__find_symbol({ query: "ThreadLocal" })
-
-// Step 3: 只读关键文件（限制行数）
-view_file({ path: "x.java", startLine: 40, endLine: 90 })
-```
 
 ---
 
-### 模式 B: 基础模式（无 MCP）
-
-**Step 1: 症状分析**
-
-根据症状确定检查重点：
-
-| 症状 | 常见原因 | 优先检查 |
-|------|----------|----------|
-| **内存暴涨** | 无界缓存、大对象、ThreadLocal 泄露 | static Map、ThreadLocal |
-| **CPU 高** | 锁竞争、死循环、正则回溯 | synchronized、while(true) |
-| **响应慢** | N+1 查询、外部调用无超时、锁阻塞 | SQL 循环、timeout 配置 |
-| **资源耗尽** | 无界线程池、连接泄露 | Executors、DataSource |
-| **消息积压** | 消费者阻塞、处理太慢 | @KafkaListener 内的 IO |
-| **GC 频繁** | 循环创建对象、大对象进老年代 | for 循环内 new、大数组 |
-
-**Step 2: 代码搜索（强制使用 LSP）**
+## Phase 2: 🎯 狙击验证 (LSP)
 
 > [!CAUTION]
-> **必须使用 `mcp__cclsp__find_symbol` 进行代码搜索**
-> 禁止直接使用 grep，除非 cclsp 明确失败
+> **只跳转到雷达标记的位置**，不要盲目搜索
 
+对每个嫌疑点：
+
+1. **使用 LSP 跳转**
 ```
-# 强制使用 cclsp
-mcp__cclsp__find_symbol({ query: "synchronized" })
-mcp__cclsp__find_symbol({ query: "ThreadLocal" })
-
-# 找到符号后，分析调用链
-mcp__cclsp__find_call_hierarchy({ file: "x.java", line: 123, direction: "incoming" })
+mcp__cclsp__find_symbol({ query: "嫌疑方法名" })
 ```
 
-**搜索关键词**：
-| 症状 | cclsp 搜索（必须） |
-|------|-------------------|
-| memory | `ThreadLocal`, `ConcurrentHashMap`, `static Map` |
-| cpu | `synchronized`, `ReentrantLock`, `Atomic` |
-| slow | `HttpClient`, `RestTemplate`, `@Transactional` |
-| resource | `ThreadPoolExecutor`, `DataSource`, `newCachedThreadPool` |
-| backlog | `@KafkaListener`, `@RabbitListener`, `BlockingQueue` |
-| gc | `ArrayList`, `StringBuilder`, `stream` |
+2. **验证上下文**
+   - N+1 嫌疑 → 检查被调用方法是否是 DAO
+   - ThreadLocal → 检查是否有 finally { remove() }
+   - 锁竞争 → 检查锁范围大小
 
-**仅当 cclsp 失败时**，使用 grep_search（需说明原因）：
+3. **只读关键行**（限制 50 行）
 ```
-// cclsp 失败原因：LSP 服务未启动
-grep_search({ Query: "synchronized", SearchPath: "./", MatchPerLine: true })
+view_file({ path: "x.java", startLine: 100, endLine: 150 })
 ```
-
-**Step 3: 验证命令**
-
-| 症状 | 验证命令 |
-|------|----------|
-| 内存 | `jmap -histo:live PID | head -20` |
-| CPU | `jstack PID | grep -A 20 "BLOCKED"` |
-| 锁 | `jstack PID | grep "deadlock"` |
-| 慢 | `arthas: trace 类名 方法名` |
-| 资源 | `lsof -p PID | wc -l` |
-
-**Step 4: 常见问题模式**
-
-<details>
-<summary>🔥 锁竞争（CPU高 + 响应慢）</summary>
-
-**特征**：多线程 BLOCKED 状态
-**搜索**：`synchronized`, `ReentrantLock`
-**验证**：`jstack | grep BLOCKED`
-**修复**：减小锁粒度、读写锁分离、无锁算法
-
-</details>
-
-<details>
-<summary>🔥 N+1 查询（响应慢）</summary>
-
-**特征**：循环内单条 SQL
-**搜索**：`for.*findById`, `forEach.*dao`
-**验证**：开启 SQL 日志观察重复 SQL
-**修复**：IN 批量查询、JOIN 查询
-
-</details>
-
-<details>
-<summary>🔥 无界缓存（内存暴涨）</summary>
-
-**特征**：static Map 只增不删
-**搜索**：`static.*Map.*=.*new`
-**验证**：`jmap -histo:live | grep HashMap`
-**修复**：Caffeine/Guava Cache 带 TTL
-
-</details>
-
-<details>
-<summary>🔥 ThreadLocal 泄露（内存 + OOM）</summary>
-
-**特征**：ThreadLocal.set() 后无 remove()
-**搜索**：`ThreadLocal` 检查配对
-**验证**：MAT 分析 ThreadLocalMap
-**修复**：finally 中 remove()
-
-</details>
-
-<details>
-<summary>🔥 无界线程池（资源耗尽）</summary>
-
-**特征**：newCachedThreadPool
-**搜索**：`Executors.newCached`
-**验证**：`arthas: thread -n 10`
-**修复**：ThreadPoolExecutor 有界
-
-</details>
 
 ---
 
-### Step 5: 输出报告
+## Phase 3: 🔬 法医取证 (可选)
+
+仅当需要字节码或运行时分析时使用：
+
+| 场景 | 工具 |
+|------|------|
+| 线程死锁 | `mcp__java-perf__analyze_thread_dump({ pid: "12345" })` |
+| 字节码锁 | `mcp__java-perf__analyze_bytecode({ filePath: "x.java" })` |
+| 堆内存 | `mcp__java-perf__analyze_heap({ pid: "12345" })` |
+| 引擎状态 | `mcp__java-perf__get_engine_status({})` |
+
+---
+
+## 症状快速定位
+
+| 症状 | 雷达检测 | 狙击验证 |
+|------|----------|----------|
+| **内存** | ThreadLocal、static Map | 检查 remove/TTL |
+| **CPU** | synchronized、循环 | 检查锁范围/复杂度 |
+| **响应慢** | 循环内调用 | 确认是否 DAO/RPC |
+| **资源** | Executors.new | 检查是否有界 |
+
+---
+
+## 输出格式
 
 每个问题必须包含：
-1. **位置**：`文件:行号`
-2. **原因**：为什么会有这个问题
-3. **量化**：调用次数、放大倍数
-4. **修复代码**：可直接应用
+1. 📍 **位置**：`文件:行号`
+2. 🔍 **根因**：为什么有问题
+3. 📊 **影响**：放大倍数
+4. 🔧 **修复**：可直接应用的 Patch
 
 ---
 
 ## 示例
 
-### 用户
-> 系统响应慢，CPU 也很高
+**用户**：系统内存暴涨
 
-### Claude（完整模式）
+**Claude**：
 ```
-mcp__java-perf__diagnose_all({ symptoms: ["cpu", "slow"], priority: "P0" })
-mcp__cclsp__find_symbol({ query: "synchronized" })
-→ 输出修复方案
-```
+# Phase 1: 雷达扫描
+mcp__java-perf__java_perf_investigation({ symptoms: ["memory"] })
+→ 发现 TraceStore.java:45 ThreadLocal 嫌疑
 
-### Claude（基础模式）
-```
-分析：cpu + slow → 可能锁竞争(60%)
-搜索：synchronized, ReentrantLock
-验证：jstack | grep BLOCKED
-→ 定位问题 → 输出修复方案
+# Phase 2: 狙击验证
+view_file({ path: "TraceStore.java", startLine: 40, endLine: 60 })
+→ 确认无 finally remove()
+
+# 输出报告
+📍 位置：TraceStore.java:45
+🔍 根因：ThreadLocal 未清理
+🔧 修复：try-finally 包裹
 ```
