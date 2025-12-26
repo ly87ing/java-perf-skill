@@ -50,26 +50,59 @@ else
     FORCE_COMPILE=true
 fi
 
-# 重新编译 MCP Server (如果更新了代码或强制编译)
-if [ "$FORCE_COMPILE" = "true" ]; then
-    echo ""
-    echo -e "${YELLOW}[2/4] 编译 Rust MCP Server...${NC}"
+# 更新二进制文件
+echo ""
+echo -e "${YELLOW}[2/4] 更新二进制文件...${NC}"
+
+# 检测平台
+PLATFORM=$(uname -s)
+ARCH=$(uname -m)
+case "$PLATFORM-$ARCH" in
+    Darwin-arm64) BINARY="java-perf-darwin-arm64" ;;
+    Darwin-x86_64) BINARY="java-perf-darwin-x64" ;;
+    Linux-x86_64) BINARY="java-perf-linux-x64" ;;
+    *) BINARY="" ;;
+esac
+
+UPDATE_SUCCESS=false
+INSTALL_DIR="$HOME/.local/bin"
+mkdir -p "$INSTALL_DIR"
+
+# 1. 尝试从 GitHub Release 下载
+if [ -n "$BINARY" ] && command -v curl &> /dev/null; then
+    echo "  尝试下载最新 Release..."
+    REPO="ly87ing/java-perf-skill"
+    RELEASE_URL="https://github.com/$REPO/releases/latest/download/$BINARY"
+    
+    if curl -fsSL "$RELEASE_URL" -o "$INSTALL_DIR/java-perf.tmp" 2>/dev/null; then
+        chmod +x "$INSTALL_DIR/java-perf.tmp"
+        mv "$INSTALL_DIR/java-perf.tmp" "$INSTALL_DIR/java-perf"
+        echo -e "${GREEN}✓ 已下载最新二进制文件${NC}"
+        UPDATE_SUCCESS=true
+    else
+        echo -e "${YELLOW}⚠ 下载失败 (可能网络问题或 Release 不存在)，尝试本地编译...${NC}"
+        rm -f "$INSTALL_DIR/java-perf.tmp"
+    fi
+fi
+
+# 2. 如果下载失败，尝试本地编译
+if [ "$UPDATE_SUCCESS" = "false" ]; then
     if command -v cargo &> /dev/null; then
+        echo "  正在通过源码编译..."
         cd "$SCRIPT_DIR/rust-mcp"
         if cargo build --release; then
-            INSTALL_DIR="$HOME/.local/bin"
-            mkdir -p "$INSTALL_DIR"
             cp target/release/java-perf "$INSTALL_DIR/java-perf"
             chmod +x "$INSTALL_DIR/java-perf"
             echo -e "${GREEN}✓ 编译并安装完成${NC}"
+            UPDATE_SUCCESS=true
         else
             echo -e "${RED}❌ 编译失败${NC}"
             exit 1
         fi
     else
-        echo -e "${YELLOW}⚠ 未安装 Cargo，尝试直接运行 install.sh 下载二进制${NC}"
-        "$SCRIPT_DIR/install.sh"
-        exit 0
+        echo -e "${RED}❌ 更新失败：无法下载二进制文件，且未检测到 Rust 环境${NC}"
+        echo "   请检查网络连接，或安装 Rust (https://rustup.rs) 进行本地编译"
+        exit 1
     fi
 fi
 
