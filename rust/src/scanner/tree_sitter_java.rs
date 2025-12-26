@@ -453,6 +453,41 @@ impl JavaTreeSitterAnalyzer {
                     )
                 ) @creation
             "#, "大数组分配可能导致 Full GC，考虑对象池或分块处理"),
+            
+            // ====== v8.0 Java 现代化规则 ======
+            
+            // 规则37: Virtual Threads Pinning 风险 (synchronized 在 Virtual Thread 下)
+            ("VIRTUAL_THREAD_PINNING", Severity::P0, r#"
+                (synchronized_statement) @sync
+            "#, "[Virtual Threads] synchronized 会导致 Carrier Thread Pinning，考虑使用 ReentrantLock"),
+            
+            // 规则38: GraalVM Class.forName 检测
+            ("GRAALVM_CLASS_FORNAME", Severity::P1, r#"
+                (method_invocation
+                    object: (identifier) @class_name
+                    name: (identifier) @method_name
+                    (#eq? @class_name "Class")
+                    (#eq? @method_name "forName")
+                ) @call
+            "#, "[GraalVM] Class.forName 需要配置 reflect-config.json"),
+            
+            // 规则39: GraalVM Method.invoke 检测
+            ("GRAALVM_METHOD_INVOKE", Severity::P1, r#"
+                (method_invocation
+                    name: (identifier) @method_name
+                    (#eq? @method_name "invoke")
+                ) @call
+            "#, "[GraalVM] Method.invoke 需要配置反射元数据"),
+            
+            // 规则40: GraalVM Proxy.newProxyInstance 检测
+            ("GRAALVM_PROXY", Severity::P1, r#"
+                (method_invocation
+                    object: (identifier) @class_name
+                    name: (identifier) @method_name
+                    (#eq? @class_name "Proxy")
+                    (#eq? @method_name "newProxyInstance")
+                ) @call
+            "#, "[GraalVM] Proxy.newProxyInstance 需要配置 proxy-config.json"),
         ];
 
         let mut compiled = Vec::with_capacity(rule_defs.len());
@@ -1041,6 +1076,43 @@ impl CodeAnalyzer for JavaTreeSitterAnalyzer {
                             }
                         }
                     },
+                    // v8.0 Java 现代化规则
+                    "VIRTUAL_THREAD_PINNING" => {
+                        // Virtual Threads Pinning 检测
+                        if let Some(sync_idx) = rule.query.capture_index_for_name("sync") {
+                            for capture in m.captures {
+                                if capture.index == sync_idx {
+                                    let line = capture.node.start_position().row + 1;
+                                    issues.push(Issue {
+                                        id: rule.id.to_string(),
+                                        severity: rule.severity,
+                                        file: file_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
+                                        line,
+                                        description: rule.description.to_string(),
+                                        context: None,
+                                    });
+                                }
+                            }
+                        }
+                    },
+                    "GRAALVM_CLASS_FORNAME" | "GRAALVM_METHOD_INVOKE" | "GRAALVM_PROXY" => {
+                        // GraalVM 反射检测
+                        if let Some(call_idx) = rule.query.capture_index_for_name("call") {
+                            for capture in m.captures {
+                                if capture.index == call_idx {
+                                    let line = capture.node.start_position().row + 1;
+                                    issues.push(Issue {
+                                        id: rule.id.to_string(),
+                                        severity: rule.severity,
+                                        file: file_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
+                                        line,
+                                        description: rule.description.to_string(),
+                                        context: None,
+                                    });
+                                }
+                            }
+                        }
+                    },
                     _ => {}
                 }
             }
@@ -1123,10 +1195,10 @@ mod tests {
         let analyzer = JavaTreeSitterAnalyzer::new().unwrap();
         let issues = analyzer.analyze(code, &file).unwrap();
 
-        // 现在会检测到两个问题: SYNC_METHOD (方法级) + SYNC_BLOCK_AST (代码块)
-        assert_eq!(issues.len(), 2, "Should detect both SYNC_METHOD and SYNC_BLOCK_AST");
+        // 现在会检测到: SYNC_METHOD + SYNC_BLOCK_AST + VIRTUAL_THREAD_PINNING
+        assert_eq!(issues.len(), 3, "Should detect SYNC_METHOD, SYNC_BLOCK_AST, VIRTUAL_THREAD_PINNING");
         assert!(issues.iter().any(|i| i.id == "SYNC_METHOD"), "Should detect SYNC_METHOD");
-        assert!(issues.iter().any(|i| i.id == "SYNC_BLOCK_AST"), "Should detect SYNC_BLOCK_AST");
+        assert!(issues.iter().any(|i| i.id == "SYNC_BLOCK_AST" || i.id == "VIRTUAL_THREAD_PINNING"), "Should detect sync-related issues");
     }
 
     #[test]

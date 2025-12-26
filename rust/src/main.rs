@@ -5,6 +5,7 @@ mod checklist;
 mod scanner;
 mod cli;
 mod taint;
+mod symbol_table;
 
 use clap::{Parser, Subcommand};
 use tracing::Level;
