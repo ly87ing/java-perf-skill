@@ -21,6 +21,8 @@ import {
 import { Symptom, InvestigationReport } from './types.js';
 import { analyzeLog, scanEvidenceDir } from './utils/forensic.js';
 import { runSmartAudit } from './utils/audit.js';
+import { jdkEngine } from './utils/jdk-engine.js';
+import { buildProjectIndex, analyzeSourceCode, getIndexStats } from './utils/ast-engine.js';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -785,11 +787,160 @@ server.tool(
     }
 );
 
+/**
+ * 工具 10: scan_source_code (AST 深度分析)
+ * 基于 Tree-sitter 的精准代码分析
+ */
+server.tool(
+    'scan_source_code',
+    {
+        code: z.string()
+            .describe('Java 源代码内容'),
+        filePath: z.string()
+            .default('unknown.java')
+            .describe('文件路径（用于报告）')
+    },
+    async ({ code, filePath }) => {
+        const issues = analyzeSourceCode(code, filePath);
+
+        let result = `## AST 深度分析结果\n\n`;
+        result += `**文件**: ${filePath}\n`;
+        result += `**发现问题**: ${issues.length} 个\n\n`;
+
+        if (issues.length === 0) {
+            result += '✅ 未发现明显问题\n';
+        } else {
+            const p0Issues = issues.filter(i => i.severity === 'P0');
+            const p1Issues = issues.filter(i => i.severity === 'P1');
+
+            if (p0Issues.length > 0) {
+                result += `### 🔴 P0 严重问题 (${p0Issues.length})\n`;
+                p0Issues.forEach((issue, i) => {
+                    result += `${i + 1}. **${issue.type}** - 行 ${issue.line}\n`;
+                    result += `   ${issue.message}\n`;
+                    result += `   \`${issue.evidence}\`\n`;
+                    if (issue.suggestion) result += `   💡 ${issue.suggestion}\n`;
+                });
+                result += '\n';
+            }
+
+            if (p1Issues.length > 0) {
+                result += `### 🟡 P1 潜在问题 (${p1Issues.length})\n`;
+                p1Issues.slice(0, 5).forEach((issue, i) => {
+                    result += `${i + 1}. **${issue.type}** - 行 ${issue.line}: ${issue.message}\n`;
+                });
+            }
+        }
+
+        return {
+            content: [{ type: 'text' as const, text: result }]
+        };
+    }
+);
+
+/**
+ * 工具 11: analyze_thread_dump (JDK 线程分析)
+ */
+server.tool(
+    'analyze_thread_dump',
+    {
+        pid: z.string()
+            .describe('Java 进程 PID')
+    },
+    async ({ pid }) => {
+        const analysis = await jdkEngine.analyzeThreadDump(pid);
+
+        if (typeof analysis === 'string') {
+            return { content: [{ type: 'text' as const, text: analysis }] };
+        }
+
+        let result = `## 线程 Dump 分析\n\n`;
+        result += `| 指标 | 数值 |\n|------|------|\n`;
+        result += `| 总线程数 | ${analysis.totalThreads} |\n`;
+        result += `| BLOCKED | ${analysis.blockedThreads} |\n`;
+        result += `| WAITING | ${analysis.waitingThreads} |\n\n`;
+
+        if (analysis.deadlocks.length > 0) {
+            result += `### 🔴 检测到死锁!\n${analysis.deadlocks.join('\n')}\n\n`;
+        }
+
+        if (analysis.hotSpots.length > 0) {
+            result += `### 热点线程 (BLOCKED/WAITING)\n`;
+            analysis.hotSpots.slice(0, 5).forEach((hs, i) => {
+                result += `${i + 1}. **${hs.thread}** [${hs.state}]\n`;
+                result += `   \`${hs.stack[0] || '无堆栈'}\`\n`;
+            });
+        }
+
+        return { content: [{ type: 'text' as const, text: result }] };
+    }
+);
+
+/**
+ * 工具 12: analyze_bytecode (JDK 字节码分析)
+ */
+server.tool(
+    'analyze_bytecode',
+    {
+        filePath: z.string()
+            .describe('Java 源文件路径')
+    },
+    async ({ filePath }) => {
+        const result = await jdkEngine.analyzeBytecode(filePath);
+        return { content: [{ type: 'text' as const, text: result }] };
+    }
+);
+
+/**
+ * 工具 13: analyze_heap (JDK 堆分析)
+ */
+server.tool(
+    'analyze_heap',
+    {
+        pid: z.string()
+            .describe('Java 进程 PID')
+    },
+    async ({ pid }) => {
+        const result = await jdkEngine.analyzeHeap(pid);
+        return { content: [{ type: 'text' as const, text: result }] };
+    }
+);
+
+/**
+ * 工具 14: get_engine_status (获取引擎状态)
+ */
+server.tool(
+    'get_engine_status',
+    {},
+    async () => {
+        const jdkStatus = jdkEngine.getStatus();
+        const indexStats = getIndexStats();
+
+        let result = `## Java Perf Engine Status\n\n`;
+        result += `### JDK 引擎\n`;
+        result += `- 可用: ${jdkStatus.available ? '✅' : '❌'}\n`;
+        result += `- 版本: ${jdkStatus.version || 'N/A'}\n`;
+        result += `- JAVA_HOME: ${jdkStatus.javaHome || '未设置'}\n\n`;
+        result += `### AST 引擎\n`;
+        result += `- 索引方法数: ${indexStats.methods}\n`;
+        result += `- DAO 方法数: ${indexStats.daoMethods}\n`;
+
+        return { content: [{ type: 'text' as const, text: result }] };
+    }
+);
+
 // ========== 启动服务器 ==========
 async function main() {
+    // 尝试构建项目索引
+    try {
+        await buildProjectIndex(process.cwd());
+    } catch (err) {
+        console.error('[AST Engine] Index build failed:', err);
+    }
+
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.error('Java Perf MCP Server v2.0.0 (Omni-Engine) running on stdio');
+    console.error('Java Perf MCP Server v3.0.0 (Hybrid Dual-Engine) running on stdio');
 }
 
 main().catch(console.error);
