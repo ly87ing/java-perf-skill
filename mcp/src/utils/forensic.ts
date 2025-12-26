@@ -83,9 +83,10 @@ function extractCoordinates(content: string): CrimeScene[] {
 }
 
 // ========== 安全限制常量 ==========
-const MAX_MEMORY_MB = 1024;       // 最大内存增量 1GB（对于大日志更实用）
-const MAX_PROCESS_TIME_MS = 30000; // 最大处理时间 30 秒
-const CHUNK_SIZE = 256 * 1024;    // 每次读取 256KB（提升读取效率）
+const MAX_MEMORY_MB = 1024;       // 最大内存增量 1GB
+const MIN_PROCESS_TIME_MS = 30000; // 最小处理时间 30 秒
+const MS_PER_MB = 100;            // 每 MB 给 100ms 处理时间
+const CHUNK_SIZE = 256 * 1024;    // 每次读取 256KB
 
 /**
  * 检查内存使用，返回当前 MB
@@ -141,11 +142,15 @@ export function analyzeLog(filePath: string, maxLines: number = 50000): LogAnaly
         let position = 0;
         let leftover = '';
 
+        // 动态超时：根据文件大小计算
+        const fileSizeMB = fileSize / (1024 * 1024);
+        const dynamicTimeout = Math.max(MIN_PROCESS_TIME_MS, fileSizeMB * MS_PER_MB);
+
         while (position < fileSize && linesProcessed < maxLines) {
-            // 熔断检查：时间
-            if (Date.now() - startTime > MAX_PROCESS_TIME_MS) {
+            // 熔断检查：时间（动态超时）
+            if (Date.now() - startTime > dynamicTimeout) {
                 truncated = true;
-                truncateReason = `⚠️ 分析超时 (>${MAX_PROCESS_TIME_MS / 1000}s)，已自动终止`;
+                truncateReason = `⚠️ 分析超时 (>${Math.round(dynamicTimeout / 1000)}s for ${fileSizeMB.toFixed(0)}MB)，已自动终止`;
                 break;
             }
 
