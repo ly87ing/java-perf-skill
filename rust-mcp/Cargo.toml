@@ -1,0 +1,40 @@
+[package]
+name = "java-perf"
+version = "4.0.0"
+edition = "2021"
+authors = ["ly87ing"]
+description = "Java Performance Diagnostics MCP Server - Radar-Sniper Architecture"
+license = "MIT"
+repository = "https://github.com/ly87ing/java-perf-skill"
+
+[[bin]]
+name = "java-perf"
+path = "src/main.rs"
+
+[dependencies]
+# MCP Protocol
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+
+# AST Parsing (Tree-sitter)
+tree-sitter = "0.22"
+tree-sitter-java = "0.21"
+
+# CLI and utilities
+clap = { version = "4.0", features = ["derive"] }
+walkdir = "2.4"
+regex = "1.10"
+chrono = "0.4"
+memchr = "2.7"
+
+# Logging (to stderr only!)
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
