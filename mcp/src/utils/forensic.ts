@@ -82,32 +82,161 @@ function extractCoordinates(content: string): CrimeScene[] {
     return scenes.slice(0, 20);  // 最多返回 20 个坐标
 }
 
-// ========== 时序折叠分析 ==========
+// ========== 安全限制常量 ==========
+const MAX_MEMORY_MB = 100;       // 最大内存占用 100MB
+const MAX_PROCESS_TIME_MS = 10000; // 最大处理时间 10 秒
+const CHUNK_SIZE = 64 * 1024;    // 每次读取 64KB
 
 /**
- * 分析日志文件，返回精简摘要
+ * 检查内存使用，返回当前 MB
+ */
+function getMemoryUsageMB(): number {
+    return process.memoryUsage().heapUsed / (1024 * 1024);
+}
+
+/**
+ * 流式分析日志文件（安全版本）
+ * 
+ * 安全特性：
+ * 1. 流式处理 - 不一次性加载全部内容
+ * 2. 内存熔断 - 超过 100MB 自动停止
+ * 3. 时间熔断 - 超过 10 秒自动停止
  * 
  * @param filePath 日志文件路径
  * @param maxLines 最大读取行数（防止内存溢出）
  */
 export function analyzeLog(filePath: string, maxLines: number = 50000): LogAnalysisResult {
-    let content: string;
+    const startTime = Date.now();
+    const startMemory = getMemoryUsageMB();
+
+    // 用于收集数据的 Map（限制大小）
+    const patternMap = new Map<string, {
+        count: number;
+        firstTs: number | null;
+        lastTs: number | null;
+        example: string;
+    }>();
+
+    const exceptionMap = new Map<string, {
+        type: string;
+        location: string;
+        count: number;
+        example: string;
+    }>();
+
+    const coordinates: CrimeScene[] = [];
+    const coordSeen = new Set<string>();
+
+    let linesProcessed = 0;
+    let truncated = false;
+    let truncateReason = '';
 
     try {
-        // 读取文件（生产环境应使用 Stream）
         const stat = fs.statSync(filePath);
-        if (stat.size > 100 * 1024 * 1024) {
-            // 文件超过 100MB，只读取头尾
-            const fd = fs.openSync(filePath, 'r');
-            const headBuffer = Buffer.alloc(5 * 1024 * 1024);
-            const tailBuffer = Buffer.alloc(5 * 1024 * 1024);
-            fs.readSync(fd, headBuffer, 0, headBuffer.length, 0);
-            fs.readSync(fd, tailBuffer, 0, tailBuffer.length, stat.size - tailBuffer.length);
-            fs.closeSync(fd);
-            content = headBuffer.toString('utf-8') + '\n...[TRUNCATED]...\n' + tailBuffer.toString('utf-8');
-        } else {
-            content = fs.readFileSync(filePath, 'utf-8');
+        const fileSize = stat.size;
+
+        // ===== 流式读取 =====
+        const fd = fs.openSync(filePath, 'r');
+        const buffer = Buffer.alloc(CHUNK_SIZE);
+        let position = 0;
+        let leftover = '';
+
+        while (position < fileSize && linesProcessed < maxLines) {
+            // 熔断检查：时间
+            if (Date.now() - startTime > MAX_PROCESS_TIME_MS) {
+                truncated = true;
+                truncateReason = `⚠️ 分析超时 (>${MAX_PROCESS_TIME_MS / 1000}s)，已自动终止`;
+                break;
+            }
+
+            // 熔断检查：内存
+            const currentMemory = getMemoryUsageMB();
+            if (currentMemory - startMemory > MAX_MEMORY_MB) {
+                truncated = true;
+                truncateReason = `⚠️ 内存占用过高 (>${MAX_MEMORY_MB}MB)，已自动终止`;
+                break;
+            }
+
+            // 读取一块数据
+            const bytesRead = fs.readSync(fd, buffer, 0, CHUNK_SIZE, position);
+            if (bytesRead === 0) break;
+
+            position += bytesRead;
+            const chunk = leftover + buffer.toString('utf-8', 0, bytesRead);
+            const lines = chunk.split('\n');
+
+            // 保留最后一行（可能不完整）
+            leftover = lines.pop() || '';
+
+            // 处理每一行
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                linesProcessed++;
+
+                // 归一化模式统计
+                const normalized = normalizeLogLine(line);
+                const ts = extractTimestamp(line);
+
+                if (!patternMap.has(normalized)) {
+                    // 限制 Map 大小
+                    if (patternMap.size < 1000) {
+                        patternMap.set(normalized, {
+                            count: 0,
+                            firstTs: ts,
+                            lastTs: ts,
+                            example: line.substring(0, 200)
+                        });
+                    }
+                }
+
+                const entry = patternMap.get(normalized);
+                if (entry) {
+                    entry.count++;
+                    if (ts) entry.lastTs = ts;
+                }
+
+                // 异常指纹提取
+                const exMatch = line.match(/(\w+Exception|\w+Error)\s*(:|at\s+)?\s*([^\n]*)/i);
+                if (exMatch) {
+                    const exType = exMatch[1];
+                    const context = exMatch[3] || '';
+                    const locationMatch = context.match(/(\w+\.)+\w+/);
+                    const location = locationMatch ? locationMatch[0].split('.').slice(-2).join('.') : 'Unknown';
+                    const fingerprint = `${exType}@${location}`;
+
+                    if (!exceptionMap.has(fingerprint)) {
+                        if (exceptionMap.size < 100) {
+                            exceptionMap.set(fingerprint, {
+                                type: exType,
+                                location,
+                                count: 0,
+                                example: exMatch[0].substring(0, 150)
+                            });
+                        }
+                    }
+
+                    const exEntry = exceptionMap.get(fingerprint);
+                    if (exEntry) exEntry.count++;
+                }
+
+                // 坐标提取
+                const coordMatch = line.match(/\((\w+\.java):(\d+)\)/);
+                if (coordMatch && coordinates.length < 20) {
+                    const key = `${coordMatch[1]}:${coordMatch[2]}`;
+                    if (!coordSeen.has(key)) {
+                        coordSeen.add(key);
+                        coordinates.push({
+                            file: coordMatch[1],
+                            line: parseInt(coordMatch[2]),
+                            reason: 'Stack Trace'
+                        });
+                    }
+                }
+            }
         }
+
+        fs.closeSync(fd);
+
     } catch (err) {
         return {
             summary: `Error reading log file: ${err}`,
@@ -117,38 +246,10 @@ export function analyzeLog(filePath: string, maxLines: number = 50000): LogAnaly
         };
     }
 
-    const lines = content.split('\n').slice(0, maxLines);
-    const coordinates = extractCoordinates(content);
+    const processTime = Date.now() - startTime;
+    const memoryUsed = Math.round(getMemoryUsageMB() - startMemory);
 
-    // ===== 时序折叠分析 =====
-    const patternMap = new Map<string, {
-        count: number;
-        firstTs: number | null;
-        lastTs: number | null;
-        example: string;
-    }>();
-
-    for (const line of lines) {
-        if (!line.trim()) continue;
-
-        const normalized = normalizeLogLine(line);
-        const ts = extractTimestamp(line);
-
-        if (!patternMap.has(normalized)) {
-            patternMap.set(normalized, {
-                count: 0,
-                firstTs: ts,
-                lastTs: ts,
-                example: line.substring(0, 200)
-            });
-        }
-
-        const entry = patternMap.get(normalized)!;
-        entry.count++;
-        if (ts) entry.lastTs = ts;
-    }
-
-    // 计算频率并筛选异常
+    // ===== 计算高频异常 =====
     const anomalies: LogAnomaly[] = [];
 
     for (const [pattern, data] of patternMap) {
@@ -157,7 +258,6 @@ export function analyzeLog(filePath: string, maxLines: number = 50000): LogAnaly
             : 0;
         const rate = duration > 0 ? data.count / duration : 0;
 
-        // 筛选条件：次数 > 1000 或 频率 > 10/s
         if (data.count > 1000 || rate > 10) {
             anomalies.push({
                 pattern,
@@ -168,81 +268,40 @@ export function analyzeLog(filePath: string, maxLines: number = 50000): LogAnaly
             });
         }
     }
-
-    // 按频率排序
     anomalies.sort((a, b) => b.rate - a.rate);
 
-    // ===== 异常指纹归类 =====
-    interface ExceptionFingerprint {
-        type: string;           // Exception 类型
-        location: string;       // 位置 (Class.method)
-        fingerprint: string;    // 指纹
-        count: number;          // 出现次数
-        example: string;        // 原始示例
-    }
-
-    const exceptionMap = new Map<string, ExceptionFingerprint>();
-
-    // 提取异常指纹
-    const exceptionRegex = /(\w+Exception|\w+Error)\s*(:|at\s+)?\s*([^\n]*)/gi;
-    let exMatch;
-
-    while ((exMatch = exceptionRegex.exec(content)) !== null) {
-        const exType = exMatch[1];
-        const context = exMatch[3] || '';
-
-        // 提取位置（如 com.xxx.UserSvc.login）
-        const locationMatch = context.match(/(\w+\.)+\w+/);
-        const location = locationMatch ? locationMatch[0].split('.').slice(-2).join('.') : 'Unknown';
-
-        // 生成指纹（类型 + 位置）
-        const fingerprint = `${exType}@${location}`;
-
-        if (!exceptionMap.has(fingerprint)) {
-            exceptionMap.set(fingerprint, {
-                type: exType,
-                location,
-                fingerprint,
-                count: 0,
-                example: exMatch[0].substring(0, 150)
-            });
-        }
-        exceptionMap.get(fingerprint)!.count++;
-    }
-
-    // 转为数组并排序
+    // ===== 转换异常指纹 =====
     const exceptionFingerprints = Array.from(exceptionMap.values())
         .sort((a, b) => b.count - a.count);
 
     // ===== 生成摘要 =====
     let summary = `### 日志分析: ${path.basename(filePath)}\n\n`;
-    summary += `**统计**: ${lines.length.toLocaleString()} 行, ${exceptionFingerprints.length} 类异常\n\n`;
 
-    // 异常指纹归类输出
+    // 安全指标
+    summary += `**性能**: ${linesProcessed.toLocaleString()} 行, ${processTime}ms, +${memoryUsed}MB\n`;
+    if (truncated) {
+        summary += `\n> [!CAUTION]\n> ${truncateReason}\n\n`;
+    }
+    summary += `\n`;
+
+    // 异常指纹归类
     if (exceptionFingerprints.length > 0) {
-        // 区分高频噪音 vs 低频关键
         const totalExceptions = exceptionFingerprints.reduce((s, e) => s + e.count, 0);
 
-        summary += `## 🔬 异常指纹归类 (共 ${totalExceptions.toLocaleString()} 次)\n\n`;
+        summary += `## 🔬 异常指纹归类 (${exceptionFingerprints.length} 类, 共 ${totalExceptions.toLocaleString()} 次)\n\n`;
         summary += `| # | 类型 | 位置 | 次数 | 标记 |\n`;
         summary += `|---|------|------|------|------|\n`;
 
         exceptionFingerprints.slice(0, 10).forEach((e, i) => {
-            // 判断标记：次数 > 1000 是噪音，< 10 是关键
             let tag = '';
-            if (e.count > 1000) {
-                tag = '🔥 核心噪音';
-            } else if (e.count < 10) {
-                tag = '⚠️ 可能根因';
-            } else if (e.count < 100) {
-                tag = '🔍 需关注';
-            }
+            if (e.count > 1000) tag = '🔥 核心噪音';
+            else if (e.count < 10) tag = '⚠️ 可能根因';
+            else if (e.count < 100) tag = '🔍 需关注';
 
             summary += `| ${i + 1} | \`${e.type}\` | ${e.location} | ${e.count.toLocaleString()} | ${tag} |\n`;
         });
         summary += '\n';
 
-        // 关键发现提示
         const keyErrors = exceptionFingerprints.filter(e => e.count < 10);
         if (keyErrors.length > 0) {
             summary += `> [!IMPORTANT]\n`;
@@ -250,7 +309,7 @@ export function analyzeLog(filePath: string, maxLines: number = 50000): LogAnaly
         }
     }
 
-    // 高频日志异常（死循环/风暴）
+    // 高频日志风暴
     if (anomalies.length > 0) {
         summary += `## 🚨 高频日志风暴\n\n`;
         anomalies.slice(0, 3).forEach((a, i) => {
@@ -261,7 +320,7 @@ export function analyzeLog(filePath: string, maxLines: number = 50000): LogAnaly
 
     // 代码坐标
     if (coordinates.length > 0) {
-        summary += `## 📍 代码坐标 (来自堆栈)\n\n`;
+        summary += `## 📍 代码坐标\n\n`;
         coordinates.slice(0, 5).forEach(c => {
             summary += `- \`${c.file}:${c.line}\`\n`;
         });
