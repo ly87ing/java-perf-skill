@@ -1,7 +1,7 @@
-# Java Perf v4.0.0 (Rust)
+# Java Perf v4.1.0 (Rust)
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-4.0.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/Version-4.1.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/Language-Rust-orange" alt="Rust">
   <img src="https://img.shields.io/badge/Size-1.9MB-green" alt="Binary Size">
   <img src="https://img.shields.io/badge/Dependencies-Zero-purple" alt="No Dependencies">
@@ -30,14 +30,16 @@ Phase 3: 🔬 Forensic (Deep Dive)
 
 ## 🚀 Advantages
 
-| Metric | Node.js (v3.x) | Rust (v4.0) |
+| Metric | Node.js (v3.x) | Rust (v4.0+) |
 |--------|---------------|-------------|
-| Dependency | Node.js + npm | **Zero** (Single Binary) |
-| Size | ~50MB | **~1.9MB** |
-| Startup | ~500ms | **~5ms** |
-| Scan Speed | 1000 files / 10s | **1000 files / 0.2s** |
+| **Install** | Need Node.js | **Zero Dependencies** (Release Download) |
+| **Size** | ~50MB | **~1.9MB** (Single Binary) |
+| **Startup** | ~500ms | **~5ms** |
+| **Scan Speed** | 1000 files / 10s | **1000 files / 0.2s** |
 
 ## 📦 Installation
+
+**No Rust environment required!** The script automatically downloads the pre-compiled binary for your platform.
 
 ### Quick Install
 
@@ -47,7 +49,20 @@ cd java-perf-skill
 ./install.sh
 ```
 
+Supported Platforms:
+- macOS Apple Silicon (arm64)
+- macOS Intel (x86_64)
+- Linux (x86_64)
+
+### Update
+
+```bash
+./update.sh
+```
+*Automatically downloads the latest binary from GitHub Releases.*
+
 ### Manual Install (From Source)
+*Only if you want to build from scratch:*
 
 ```bash
 cd rust-mcp
