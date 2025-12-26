@@ -4,6 +4,7 @@ mod jdk_engine;
 mod checklist;
 mod scanner;
 mod cli;
+mod taint;
 
 use clap::{Parser, Subcommand};
 use tracing::Level;
