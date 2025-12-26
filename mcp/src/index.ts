@@ -22,7 +22,7 @@ import { Symptom, InvestigationReport } from './types.js';
 import { analyzeLog, scanEvidenceDir } from './utils/forensic.js';
 import { runSmartAudit } from './utils/audit.js';
 import { jdkEngine } from './utils/jdk-engine.js';
-import { buildProjectIndex, analyzeSourceCode, getIndexStats } from './utils/ast-engine.js';
+import { buildProjectIndex, analyzeSourceCode, getIndexStats, scanProjectFiles } from './utils/ast-engine.js';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -929,6 +929,30 @@ server.tool(
     }
 );
 
+/**
+ * 工具 15: radar_scan (雷达全项目扫描)
+ * 一次调用扫描全项目，返回嫌疑点列表
+ */
+server.tool(
+    'radar_scan',
+    {
+        codePath: z.string()
+            .default('./')
+            .describe('项目代码路径')
+    },
+    async ({ codePath }) => {
+        const absPath = path.resolve(codePath);
+        const result = scanProjectFiles(absPath);
+
+        return {
+            content: [{
+                type: 'text' as const,
+                text: result.summary
+            }]
+        };
+    }
+);
+
 // ========== 启动服务器 ==========
 async function main() {
     // 尝试构建项目索引
@@ -940,7 +964,7 @@ async function main() {
 
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.error('Java Perf MCP Server v3.0.0 (Hybrid Dual-Engine) running on stdio');
+    console.error('Java Perf MCP Server v3.1.0 (Radar-Sniper) running on stdio');
 }
 
 main().catch(console.error);

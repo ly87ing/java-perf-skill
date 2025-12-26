@@ -350,3 +350,68 @@ export function getIndexStats(): { methods: number; daoMethods: number } {
     }
     return { methods: symbolIndex.size, daoMethods };
 }
+
+/**
+ * 雷达扫描：全项目扫描
+ * 一次调用，返回所有嫌疑点
+ */
+export function scanProjectFiles(codePath: string): {
+    filesScanned: number;
+    suspects: AstIssue[];
+    summary: string;
+} {
+    const files = getAllJavaFiles(codePath);
+    const allIssues: AstIssue[] = [];
+
+    for (const file of files) {
+        try {
+            const content = fs.readFileSync(file, 'utf-8');
+            const issues = analyzeSourceCode(content, path.relative(codePath, file));
+            allIssues.push(...issues);
+        } catch {
+            // 忽略读取错误
+        }
+    }
+
+    // 按严重级别排序
+    allIssues.sort((a, b) => {
+        if (a.severity !== b.severity) return a.severity < b.severity ? -1 : 1;
+        return 0;
+    });
+
+    // 生成摘要
+    const p0Count = allIssues.filter(i => i.severity === 'P0').length;
+    const p1Count = allIssues.filter(i => i.severity === 'P1').length;
+
+    let summary = `## 🛰️ 雷达扫描结果\n\n`;
+    summary += `**扫描**: ${files.length} 个 Java 文件\n`;
+    summary += `**发现**: ${allIssues.length} 个嫌疑点 (P0: ${p0Count}, P1: ${p1Count})\n\n`;
+
+    if (allIssues.length === 0) {
+        summary += '✅ 未发现明显问题\n';
+    } else {
+        // P0 问题
+        if (p0Count > 0) {
+            summary += `### 🔴 P0 严重嫌疑 (${p0Count})\n`;
+            allIssues.filter(i => i.severity === 'P0').slice(0, 10).forEach((issue, i) => {
+                summary += `${i + 1}. **${issue.type}** - \`${issue.file}:${issue.line}\`\n`;
+                summary += `   ${issue.message}\n`;
+            });
+            summary += '\n';
+        }
+
+        // P1 问题
+        if (p1Count > 0) {
+            summary += `### 🟡 P1 潜在嫌疑 (${p1Count}, 显示前 5)\n`;
+            allIssues.filter(i => i.severity === 'P1').slice(0, 5).forEach((issue, i) => {
+                summary += `${i + 1}. ${issue.type} - \`${issue.file}:${issue.line}\`\n`;
+            });
+        }
+    }
+
+    return {
+        filesScanned: files.length,
+        suspects: allIssues,
+        summary
+    };
+}
