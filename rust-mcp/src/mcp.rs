@@ -30,6 +30,29 @@ struct JsonRpcError {
     message: String,
 }
 
+/// MCP 错误码定义
+/// 遵循 JSON-RPC 2.0 规范: -32000 至 -32099 为服务器定义错误
+#[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
+enum McpErrorCode {
+    /// 通用内部错误
+    InternalError = -32603,
+    /// IO 错误（文件不存在、读取失败等）
+    IoError = -32001,
+    /// 解析错误（日志解析、AST 解析失败等）
+    ParseError = -32002,
+    /// 工具不可用（JDK 工具缺失等）
+    ToolNotFound = -32003,
+    /// 参数无效
+    InvalidArgument = -32004,
+}
+
+impl McpErrorCode {
+    fn code(&self) -> i32 {
+        *self as i32
+    }
+}
+
 /// MCP 工具定义
 fn get_tools() -> Value {
     json!({
@@ -296,11 +319,15 @@ fn handle_tool_call(params: &Option<Value>) -> Result<Value, Box<dyn std::error:
         },
         "get_engine_status" => {
             Ok(json!({
-                "version": "4.0.0",
+                "version": "4.1.0",
                 "engine": "Rust Radar-Sniper",
-                "ast": "regex-based (15+ patterns)",
-                "jdk": jdk_engine::check_jdk_available(),
-                "tools": ["radar_scan", "scan_source_code", "analyze_log", "analyze_thread_dump", "analyze_bytecode", "analyze_heap"]
+                "ast_analyzer": "Tree-sitter + Regex (hybrid)",
+                "jdk_tools": {
+                    "jstack": jdk_engine::check_tool_available("jstack"),
+                    "jmap": jdk_engine::check_tool_available("jmap"),
+                    "javap": jdk_engine::check_tool_available("javap"),
+                },
+                "available_tools": ["radar_scan", "scan_source_code", "analyze_log", "analyze_thread_dump", "analyze_bytecode", "analyze_heap"]
             }))
         },
         _ => Err(format!("Unknown tool: {}", tool_name).into()),

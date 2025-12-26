@@ -33,18 +33,7 @@ static COMMENT_REGEX: Lazy<Regex> = Lazy::new(|| {
 });
 
 // P0 严重规则
-static RE_N_PLUS_ONE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)for\s*\([^)]+\)\s*\{[^}]*(dao|repository|mapper|jdbc|select|insert|update|delete|http|client)[^}]*\}").unwrap()
-});
-static RE_NESTED_LOOP: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"for\s*\([^)]+\)\s*\{[^}]*for\s*\([^)]+\)").unwrap()
-});
-static RE_SYNC_METHOD: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"public\s+synchronized\s+\w+\s+\w+\s*\(").unwrap()
-});
-static RE_THREADLOCAL: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"ThreadLocal\s*<").unwrap()
-});
+// 注意: N_PLUS_ONE, NESTED_LOOP, SYNC_METHOD, THREADLOCAL 已迁移至 tree_sitter_java.rs 使用 AST 分析
 static RE_UNBOUNDED_POOL: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"Executors\s*\.\s*(newCachedThreadPool|newScheduledThreadPool|newSingleThreadExecutor)").unwrap()
 });
