@@ -83,9 +83,9 @@ function extractCoordinates(content: string): CrimeScene[] {
 }
 
 // ========== 安全限制常量 ==========
-const MAX_MEMORY_MB = 100;       // 最大内存占用 100MB
-const MAX_PROCESS_TIME_MS = 10000; // 最大处理时间 10 秒
-const CHUNK_SIZE = 64 * 1024;    // 每次读取 64KB
+const MAX_MEMORY_MB = 1024;       // 最大内存增量 1GB（对于大日志更实用）
+const MAX_PROCESS_TIME_MS = 30000; // 最大处理时间 30 秒
+const CHUNK_SIZE = 256 * 1024;    // 每次读取 256KB（提升读取效率）
 
 /**
  * 检查内存使用，返回当前 MB
