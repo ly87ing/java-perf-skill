@@ -186,10 +186,6 @@ static RE_SELECT_STAR: Lazy<Regex> = Lazy::new(|| {
     // SELECT * 查询
     Regex::new(r#"["']SELECT\s+\*\s+FROM"#).unwrap()
 });
-static RE_NO_LIMIT_QUERY: Lazy<Regex> = Lazy::new(|| {
-    // 无 LIMIT 的查询可能返回大量数据
-    Regex::new(r#"["']SELECT\s+[^"']+FROM[^"']+(?!LIMIT)"#).unwrap()
-});
 static RE_LIKE_LEADING_WILDCARD: Lazy<Regex> = Lazy::new(|| {
     // LIKE '%xxx' 前导通配符导致全表扫描
     Regex::new(r#"LIKE\s+['"]%"#).unwrap()
