@@ -198,7 +198,9 @@ pub fn get_checklist_data() -> Vec<CheckSection> {
 }
 
 /// 获取检查清单（按症状）
-pub fn get_checklist(symptoms: &[&str], priority_filter: Option<&str>) -> Result<Value, Box<dyn std::error::Error>> {
+/// 
+/// compact: true 时只返回检查项描述，省略 verify/fix/why
+pub fn get_checklist(symptoms: &[&str], priority_filter: Option<&str>, compact: bool) -> Result<Value, Box<dyn std::error::Error>> {
     let all_data = get_checklist_data();
     
     // 收集相关章节ID
@@ -223,37 +225,62 @@ pub fn get_checklist(symptoms: &[&str], priority_filter: Option<&str>) -> Result
         }
     }
     
-    // 生成报告
-    let mut report = format!(
-        "## 🔍 检查清单 (症状: {})\n\n",
-        symptoms.join(", ")
-    );
-    
-    for section in &result_sections {
-        report.push_str(&format!(
-            "### {} {} ({})\n\n",
-            match section.priority.as_str() {
+    // 根据 compact 模式生成不同报告
+    if compact {
+        // 紧凑模式
+        let mut report = format!(
+            "## 🔍 检查清单 (紧凑模式) - 症状: {}\n\n",
+            symptoms.join(", ")
+        );
+        
+        for section in &result_sections {
+            let emoji = match section.priority.as_str() {
                 "P0" => "🔴",
                 "P1" => "🟡",
                 _ => "🔵",
-            },
-            section.title,
-            section.priority
-        ));
-        
-        for item in &section.items {
-            report.push_str(&format!("- **{}**\n", item.desc));
-            if let Some(verify) = &item.verify {
-                report.push_str(&format!("  - 验证: `{}`\n", verify));
+            };
+            report.push_str(&format!("**{} {}**\n", emoji, section.title));
+            
+            for item in &section.items {
+                report.push_str(&format!("- {}\n", item.desc));
             }
-            if let Some(fix) = &item.fix {
-                report.push_str(&format!("  - 修复: {}\n", fix));
-            }
+            report.push('\n');
         }
-        report.push('\n');
+        
+        Ok(json!(report))
+    } else {
+        // 完整模式
+        let mut report = format!(
+            "## 🔍 检查清单 (症状: {})\n\n",
+            symptoms.join(", ")
+        );
+        
+        for section in &result_sections {
+            report.push_str(&format!(
+                "### {} {} ({})\n\n",
+                match section.priority.as_str() {
+                    "P0" => "🔴",
+                    "P1" => "🟡",
+                    _ => "🔵",
+                },
+                section.title,
+                section.priority
+            ));
+            
+            for item in &section.items {
+                report.push_str(&format!("- **{}**\n", item.desc));
+                if let Some(verify) = &item.verify {
+                    report.push_str(&format!("  - 验证: `{}`\n", verify));
+                }
+                if let Some(fix) = &item.fix {
+                    report.push_str(&format!("  - 修复: {}\n", fix));
+                }
+            }
+            report.push('\n');
+        }
+        
+        Ok(json!(report))
     }
-    
-    Ok(json!(report))
 }
 
 /// 获取所有反模式

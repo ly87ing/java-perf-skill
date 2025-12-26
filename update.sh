@@ -120,7 +120,7 @@ echo -e "${GREEN}✓ Skill 更新完成${NC}"
 
 # 重新注册 MCP
 echo ""
-echo -e "${YELLOW}[4/5] 重新注册 MCP Server...${NC}"
+echo -e "${YELLOW}[4/4] 重新注册 MCP Server...${NC}"
 INSTALL_DIR="$HOME/.local/bin"
 
 if command -v claude &> /dev/null; then
@@ -143,7 +143,7 @@ fi
 
 # 显示更新日志
 echo ""
-echo -e "${YELLOW}[5/5] 最近更新日志...${NC}"
+echo -e "${YELLOW}最近更新日志...${NC}"
 git log --oneline -5 2>/dev/null || true
 
 # 完成

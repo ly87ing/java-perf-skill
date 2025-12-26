@@ -67,7 +67,7 @@ jobs:
             artifacts/java-perf-darwin-arm64/java-perf-darwin-arm64
             artifacts/java-perf-linux-x64/java-perf-linux-x64
           body: |
-            ## Java Perf v4.0.0 (Rust)
+            ## Java Perf ${{ github.ref_name }} (Rust)
             
             零依赖，单二进制。
             

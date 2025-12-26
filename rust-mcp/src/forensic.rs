@@ -2,6 +2,7 @@
 //! 
 //! 🔬 法医取证：流式处理大日志
 
+use once_cell::sync::Lazy;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs::File;
@@ -14,6 +15,15 @@ use regex::Regex;
 const MAX_MEMORY_MB: usize = 1024;
 const MS_PER_MB: u64 = 100;
 const MIN_PROCESS_TIME_MS: u64 = 30000;
+
+/// 静态编译的正则表达式
+static EXCEPTION_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(\w+Exception|\w+Error)").unwrap()
+});
+
+static LOCATION_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(\w+\.)+\w+").unwrap()
+});
 
 /// 异常指纹
 #[derive(Debug, Default)]
@@ -47,10 +57,6 @@ pub fn analyze_log(log_path: &str) -> Result<Value, Box<dyn std::error::Error>> 
     let mut truncated = false;
     let mut truncate_reason = String::new();
     
-    // 异常匹配正则
-    let exception_regex = Regex::new(r"(\w+Exception|\w+Error)")?;
-    let location_regex = Regex::new(r"(\w+\.)+\w+")?;
-    
     // 流式读取
     for line_result in reader.lines() {
         // 熔断检查：时间
@@ -73,12 +79,12 @@ pub fn analyze_log(log_path: &str) -> Result<Value, Box<dyn std::error::Error>> 
         if let Ok(line) = line_result {
             lines_processed += 1;
             
-            // 提取异常
-            if let Some(ex_match) = exception_regex.find(&line) {
+            // 提取异常 (使用静态编译的正则)
+            if let Some(ex_match) = EXCEPTION_REGEX.find(&line) {
                 let ex_type = ex_match.as_str().to_string();
                 
                 // 提取位置
-                let location = location_regex.find(&line)
+                let location = LOCATION_REGEX.find(&line)
                     .map(|m| {
                         let parts: Vec<&str> = m.as_str().split('.').collect();
                         if parts.len() >= 2 {

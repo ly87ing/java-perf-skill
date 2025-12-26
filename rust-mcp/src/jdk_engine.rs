@@ -35,6 +35,11 @@ fn get_jdk_tool(tool: &str) -> Option<String> {
 
 /// 分析线程 Dump
 pub fn analyze_thread_dump(pid: u32) -> Result<Value, Box<dyn std::error::Error>> {
+    // 输入验证
+    if pid == 0 {
+        return Err("Invalid PID: 0 is not a valid process ID".into());
+    }
+    
     let jstack = get_jdk_tool("jstack").ok_or("JAVA_HOME not set, jstack unavailable")?;
     
     let output = Command::new(&jstack)
@@ -99,6 +104,14 @@ pub fn analyze_thread_dump(pid: u32) -> Result<Value, Box<dyn std::error::Error>
 
 /// 分析字节码
 pub fn analyze_bytecode(class_path: &str) -> Result<Value, Box<dyn std::error::Error>> {
+    // 输入验证
+    if class_path.is_empty() {
+        return Err("Invalid class path: path cannot be empty".into());
+    }
+    if class_path.contains("..") || class_path.starts_with('/') && class_path.contains(";") {
+        return Err("Invalid class path: suspicious path detected".into());
+    }
+    
     let javap = get_jdk_tool("javap").ok_or("JAVA_HOME not set, javap unavailable")?;
     
     let output = Command::new(&javap)
@@ -126,6 +139,11 @@ pub fn analyze_bytecode(class_path: &str) -> Result<Value, Box<dyn std::error::E
 
 /// 分析堆内存
 pub fn analyze_heap(pid: u32) -> Result<Value, Box<dyn std::error::Error>> {
+    // 输入验证
+    if pid == 0 {
+        return Err("Invalid PID: 0 is not a valid process ID".into());
+    }
+    
     let jmap = get_jdk_tool("jmap").ok_or("JAVA_HOME not set, jmap unavailable")?;
     
     let output = Command::new(&jmap)

@@ -6,12 +6,22 @@
 //! 1. 使用 once_cell 静态编译正则，避免重复创建
 //! 2. 过滤注释内容，避免误报
 //! 3. 新增响应式编程问题检测
+//! 4. 集成 Tree-sitter AST 分析 (v5.0)
+//! 5. 并行文件扫描 (rayon) (v5.1)
+//! 6. Dockerfile 扫描 (v5.1)
 
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_json::{json, Value};
 use std::path::Path;
+use std::sync::Mutex;
 use walkdir::WalkDir;
+use rayon::prelude::*;
+
+use crate::scanner::{CodeAnalyzer, Issue as ScannerIssue, Severity as ScannerSeverity};
+use crate::scanner::tree_sitter_java::JavaTreeSitterAnalyzer;
+use crate::scanner::config::LineBasedConfigAnalyzer;
+use crate::scanner::dockerfile::DockerfileAnalyzer;
 
 // ============================================================================
 // 静态编译正则表达式（只编译一次，全局复用）
@@ -89,7 +99,7 @@ static RE_CACHE_NO_EXPIRE: Lazy<Regex> = Lazy::new(|| {
 // ============================================================================
 
 /// 问题严重级别
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
     P0, // 严重
     P1, // 警告
@@ -116,10 +126,12 @@ struct Rule {
 /// 所有规则（引用静态编译的正则）
 fn get_rules() -> Vec<Rule> {
     vec![
+        // AST Migrated Rules (Commented out / handled by Tree-sitter)
+        // Rule { id: "N_PLUS_ONE", ... }
+        // Rule { id: "NESTED_LOOP", ... }
+        // Rule { id: "SYNC_METHOD", ... }
+        
         // P0 严重
-        Rule { id: "N_PLUS_ONE", description: "循环内 IO/数据库调用", severity: Severity::P0, regex: &RE_N_PLUS_ONE },
-        Rule { id: "NESTED_LOOP", description: "嵌套循环 O(N*M)", severity: Severity::P0, regex: &RE_NESTED_LOOP },
-        Rule { id: "SYNC_METHOD", description: "synchronized 方法级锁", severity: Severity::P0, regex: &RE_SYNC_METHOD },
         Rule { id: "UNBOUNDED_POOL", description: "无界线程池 Executors", severity: Severity::P0, regex: &RE_UNBOUNDED_POOL },
         Rule { id: "UNBOUNDED_CACHE", description: "无界缓存 static Map", severity: Severity::P0, regex: &RE_UNBOUNDED_CACHE_MAP },
         Rule { id: "UNBOUNDED_LIST", description: "无界缓存 static List/Set", severity: Severity::P0, regex: &RE_UNBOUNDED_CACHE_LIST },
@@ -138,70 +150,184 @@ fn get_rules() -> Vec<Rule> {
     ]
 }
 
+// Helper to convert ScannerIssue to AstIssue
+fn convert_issue(issue: ScannerIssue) -> AstIssue {
+    let sev = match issue.severity {
+        ScannerSeverity::P0 => Severity::P0,
+        ScannerSeverity::P1 => Severity::P1,
+    };
+    AstIssue {
+        severity: sev,
+        issue_type: issue.id,
+        file: issue.file,
+        line: issue.line,
+        description: issue.description,
+    }
+}
+
 // ============================================================================
 // 核心扫描函数
 // ============================================================================
 
-/// 全项目雷达扫描
-pub fn radar_scan(code_path: &str) -> Result<Value, Box<dyn std::error::Error>> {
+/// 全项目雷达扫描 (v5.1 并行版本)
+/// 
+/// compact: true 时只返回 P0，每个 issue 只有 id/file/line
+/// max_p1: compact=false 时最多返回的 P1 数量
+pub fn radar_scan(code_path: &str, compact: bool, max_p1: usize) -> Result<Value, Box<dyn std::error::Error>> {
     let path = Path::new(code_path);
-    let mut issues: Vec<AstIssue> = Vec::new();
-    let mut file_count = 0;
-
-    for entry in WalkDir::new(path)
+    
+    // 收集所有待扫描文件
+    let entries: Vec<_> = WalkDir::new(path)
         .follow_links(true)
         .into_iter()
         .filter_map(|e| e.ok())
-    {
-        let file_path = entry.path();
-        if file_path.extension().map_or(false, |ext| ext == "java") {
-            file_count += 1;
+        .filter(|e| e.file_type().is_file())
+        .collect();
 
+    let file_count = entries.len();
+
+    // 使用 Mutex 保护共享状态 (rayon 并行安全)
+    let issues: Mutex<Vec<AstIssue>> = Mutex::new(Vec::new());
+
+    // 预初始化分析器 (在并行前创建，每个线程克隆使用或按需创建)
+    // 注意：由于 Tree-sitter 的 Query 不是 Send，我们在每个线程内创建分析器
+
+    // 并行处理文件
+    entries.par_iter().for_each(|entry| {
+        let file_path = entry.path();
+        let file_name_str = file_path.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+
+        // 本线程的 issues
+        let mut local_issues: Vec<AstIssue> = Vec::new();
+
+        if ext == "java" {
             if let Ok(content) = std::fs::read_to_string(file_path) {
-                let file_name = file_path.to_string_lossy().to_string();
-                let file_issues = analyze_java_code(&content, &file_name);
-                issues.extend(file_issues);
+                // 1. Regex Analysis (Legacy)
+                let legacy = analyze_java_code(&content, &file_path.to_string_lossy());
+                local_issues.extend(legacy);
+
+                // 2. AST Analysis
+                if let Ok(analyzer) = JavaTreeSitterAnalyzer::new() {
+                    if let Ok(ast_results) = analyzer.analyze(&content, file_path) {
+                        local_issues.extend(ast_results.into_iter().map(convert_issue));
+                    }
+                }
+            }
+        } else if ["yml", "yaml", "properties"].contains(&ext) {
+            if let Ok(content) = std::fs::read_to_string(file_path) {
+                // 3. Config Analysis
+                if let Ok(analyzer) = LineBasedConfigAnalyzer::new() {
+                    if let Ok(config_results) = analyzer.analyze(&content, file_path) {
+                        local_issues.extend(config_results.into_iter().map(convert_issue));
+                    }
+                }
+            }
+        } else if file_name_str == "Dockerfile" || file_name_str.starts_with("Dockerfile.") {
+            if let Ok(content) = std::fs::read_to_string(file_path) {
+                // 4. Dockerfile Analysis (v5.1 NEW)
+                if let Ok(analyzer) = DockerfileAnalyzer::new() {
+                    if let Ok(docker_results) = analyzer.analyze(&content, file_path) {
+                        local_issues.extend(docker_results.into_iter().map(convert_issue));
+                    }
+                }
             }
         }
-    }
 
+        // 合并到全局 issues
+        if !local_issues.is_empty() {
+            let mut global = issues.lock().unwrap();
+            global.extend(local_issues);
+        }
+    });
+
+    let issues = issues.into_inner().unwrap();
     let p0_count = issues.iter().filter(|i| matches!(i.severity, Severity::P0)).count();
     let p1_count = issues.iter().filter(|i| matches!(i.severity, Severity::P1)).count();
 
-    let mut report = format!(
-        "## 🛰️ 雷达扫描结果\n\n\
-        **扫描**: {} 个 Java 文件\n\
-        **发现**: {} 个嫌疑点 (P0: {}, P1: {})\n\n",
-        file_count, issues.len(), p0_count, p1_count
-    );
+    // === 根据 compact 模式生成不同报告 ===
+    if compact {
+        // 紧凑模式：只返回 P0，精简格式
+        let mut report = format!(
+            "## 🛰️ 雷达扫描 (v5.1 并行)\n\n**P0**: {} | **P1**: {} | **文件**: {}\n\n",
+            p0_count, p1_count, file_count
+        );
 
-    if p0_count > 0 {
-        report.push_str("### 🔴 P0 严重嫌疑\n\n");
-        for issue in issues.iter().filter(|i| matches!(i.severity, Severity::P0)) {
-            report.push_str(&format!(
-                "- **{}** - `{}:{}` - {}\n",
-                issue.issue_type, issue.file, issue.line, issue.description
-            ));
+        if p0_count > 0 {
+            for issue in issues.iter().filter(|i| matches!(i.severity, Severity::P0)) {
+                report.push_str(&format!(
+                    "- `{}` {}:{}\n",
+                    issue.issue_type, issue.file, issue.line
+                ));
+            }
+        } else {
+            report.push_str("✅ 无 P0 问题\n");
         }
-        report.push('\n');
-    }
 
-    if p1_count > 0 {
-        report.push_str("### 🟡 P1 警告\n\n");
-        for issue in issues.iter().filter(|i| matches!(i.severity, Severity::P1)).take(20) {
-            report.push_str(&format!(
-                "- **{}** - `{}:{}` - {}\n",
-                issue.issue_type, issue.file, issue.line, issue.description
-            ));
+        if p1_count > 0 {
+            report.push_str(&format!("\n*（{} 个 P1 警告已省略，使用 compact=false 查看）*\n", p1_count));
         }
-    }
 
-    Ok(json!(report))
+        Ok(json!(report))
+    } else {
+        // 完整模式
+        let mut report = format!(
+            "## 🛰️ 雷达扫描结果 (v5.1 并行 + Dockerfile)\n\n\
+            **扫描**: {} 个文件\n\
+            **发现**: {} 个嫌疑点 (P0: {}, P1: {})\n\n",
+            file_count, issues.len(), p0_count, p1_count
+        );
+
+        if p0_count > 0 {
+            report.push_str("### 🔴 P0 严重嫌疑\n\n");
+            for issue in issues.iter().filter(|i| matches!(i.severity, Severity::P0)) {
+                report.push_str(&format!(
+                    "- **{}** - `{}:{}` - {}\n",
+                    issue.issue_type, issue.file, issue.line, issue.description
+                ));
+            }
+            report.push('\n');
+        }
+
+        if p1_count > 0 {
+            report.push_str(&format!("### 🟡 P1 警告 (显示前 {})\n\n", max_p1));
+            for issue in issues.iter().filter(|i| matches!(i.severity, Severity::P1)).take(max_p1) {
+                report.push_str(&format!(
+                    "- **{}** - `{}:{}` - {}\n",
+                    issue.issue_type, issue.file, issue.line, issue.description
+                ));
+            }
+        }
+
+        Ok(json!(report))
+    }
 }
 
 /// 单文件扫描
 pub fn scan_source_code(code: &str, file_path: &str) -> Result<Value, Box<dyn std::error::Error>> {
-    let issues = analyze_java_code(code, file_path);
+    let mut issues = Vec::new();
+    let path = Path::new(file_path);
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+
+    if ext == "java" {
+        // Regex
+        issues.extend(analyze_java_code(code, file_path));
+        // AST
+        if let Ok(analyzer) = JavaTreeSitterAnalyzer::new() {
+             if let Ok(res) = analyzer.analyze(code, path) {
+                 issues.extend(res.into_iter().map(convert_issue));
+             }
+        }
+    } else if ["yml", "yaml", "properties"].contains(&ext) {
+        // Config
+        if let Ok(analyzer) = LineBasedConfigAnalyzer::new() {
+             if let Ok(res) = analyzer.analyze(code, path) {
+                 issues.extend(res.into_iter().map(convert_issue));
+             }
+        }
+    }
 
     let mut report = format!("## 🛰️ 扫描: {}\n\n", file_path);
 
@@ -223,12 +349,7 @@ pub fn scan_source_code(code: &str, file_path: &str) -> Result<Value, Box<dyn st
     Ok(json!(report))
 }
 
-/// 分析 Java 代码（高性能版本）
-///
-/// 优化：
-/// 1. 正则表达式已静态编译，不会重复创建
-/// 2. 过滤注释内容，避免误报
-/// 3. 去重逻辑
+/// 分析 Java 代码（高性能版本 - Legacy Regex）
 fn analyze_java_code(code: &str, file_path: &str) -> Vec<AstIssue> {
     let mut issues = Vec::new();
     let file_name = Path::new(file_path)
@@ -239,7 +360,8 @@ fn analyze_java_code(code: &str, file_path: &str) -> Vec<AstIssue> {
     // 1. 移除注释，避免误报
     let code_without_comments = COMMENT_REGEX.replace_all(code, "");
 
-    // 2. 特殊检测：ThreadLocal 必须有 remove()
+    // 2. 特殊检测：ThreadLocal (MIGRATED TO AST -> DISABLED HERE)
+    /*
     if RE_THREADLOCAL.is_match(&code_without_comments) {
         if !code_without_comments.contains(".remove()") {
             if let Some(mat) = RE_THREADLOCAL.find(&code_without_comments) {
@@ -254,6 +376,7 @@ fn analyze_java_code(code: &str, file_path: &str) -> Vec<AstIssue> {
             }
         }
     }
+    */
 
     // 3. 特殊检测：Cache 需要 expire 配置
     if RE_CACHE_NO_EXPIRE.is_match(&code_without_comments) {

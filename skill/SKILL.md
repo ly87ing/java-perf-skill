@@ -95,7 +95,7 @@ view_file({ path: "x.java", startLine: 100, endLine: 150 })
 **Claude**：
 ```
 # Phase 1: 雷达扫描
-mcp__java-perf__java_perf_investigation({ symptoms: ["memory"] })
+mcp__java-perf__radar_scan({ codePath: "./" })
 → 发现 TraceStore.java:45 ThreadLocal 嫌疑
 
 # Phase 2: 狙击验证

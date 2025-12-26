@@ -48,6 +48,11 @@ fn get_tools() -> Value {
                         "priorityFilter": {
                             "type": "string",
                             "description": "优先级过滤: all, P0, P1, P2"
+                        },
+                        "compact": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "紧凑模式：只返回检查项描述，省略 verify/fix/why"
                         }
                     },
                     "required": ["symptoms"]
@@ -70,6 +75,16 @@ fn get_tools() -> Value {
                         "codePath": {
                             "type": "string",
                             "description": "项目根路径"
+                        },
+                        "compact": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "紧凑模式：只返回 P0，每个 issue 只含 id/file/line"
+                        },
+                        "maxP1": {
+                            "type": "integer",
+                            "default": 5,
+                            "description": "最多返回的 P1 数量 (compact=false 时有效)"
                         }
                     },
                     "required": ["codePath"]
@@ -226,7 +241,10 @@ fn handle_tool_call(params: &Option<Value>) -> Result<Value, Box<dyn std::error:
                 .unwrap_or_default();
             let priority = arguments.get("priorityFilter")
                 .and_then(|v| v.as_str());
-            checklist::get_checklist(&symptoms, priority)
+            let compact = arguments.get("compact")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            checklist::get_checklist(&symptoms, priority, compact)
         },
         "get_all_antipatterns" => {
             checklist::get_all_antipatterns()
@@ -235,7 +253,13 @@ fn handle_tool_call(params: &Option<Value>) -> Result<Value, Box<dyn std::error:
             let code_path = arguments.get("codePath")
                 .and_then(|v| v.as_str())
                 .unwrap_or("./");
-            ast_engine::radar_scan(code_path)
+            let compact = arguments.get("compact")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            let max_p1 = arguments.get("maxP1")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(5) as usize;
+            ast_engine::radar_scan(code_path, compact, max_p1)
         },
         "scan_source_code" => {
             let code = arguments.get("code")
@@ -296,5 +320,46 @@ fn handle_tool_call(params: &Option<Value>) -> Result<Value, Box<dyn std::error:
             }],
             "isError": true
         })),
+    }
+}
+
+// ============================================================================
+// McpServer 结构体定义 (补全)
+// ============================================================================
+
+pub struct McpServer;
+
+impl McpServer {
+    pub fn new() -> Self {
+        McpServer
+    }
+
+    /// 运行 Server Loop
+    pub async fn run<R>(&self, mut input: R) -> anyhow::Result<()> 
+    where R: std::io::BufRead {
+        use std::io::Write;
+
+        let mut line = String::new();
+        loop {
+            line.clear();
+            if input.read_line(&mut line)? == 0 {
+                break; // EOF
+            }
+
+            let trimmed = line.trim();
+            if trimmed.starts_with('{') {
+                match handle_request(trimmed) {
+                    Ok(response) => {
+                        let _ = std::io::stdout().write_all(response.as_bytes());
+                        let _ = std::io::stdout().write_all(b"\n");
+                        let _ = std::io::stdout().flush();
+                    },
+                    Err(e) => {
+                        eprintln!("Error handling request: {}", e);
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }

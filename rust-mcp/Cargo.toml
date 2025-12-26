@@ -1,6 +1,6 @@
 [package]
 name = "java-perf"
-version = "4.0.0"
+version = "4.1.0"
 edition = "2021"
 authors = ["ly87ing"]
 description = "Java Performance Diagnostics MCP Server - Radar-Sniper Architecture"
@@ -22,12 +22,14 @@ tree-sitter = "0.22"
 tree-sitter-java = "0.21"
 
 # CLI and utilities
+anyhow = "1.0"
 clap = { version = "4.0", features = ["derive"] }
 walkdir = "2.4"
 regex = "1.10"
 chrono = "0.4"
 memchr = "2.7"
 once_cell = "1.19"  # 静态正则编译，避免重复创建
+rayon = "1.10"      # 并行文件扫描
 
 # Logging (to stderr only!)
 tracing = "0.1"
