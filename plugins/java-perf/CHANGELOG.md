@@ -121,8 +121,8 @@ java-perf --json scan --path ./
 ## 安装方式
 
 ```bash
-git clone https://github.com/ly87ing/java-perf-skill.git
-cd java-perf-skill
+git clone https://github.com/ly87ing/dev-skills.git
+cd dev-skills/plugins/java-perf
 ./install.sh
 ```
 

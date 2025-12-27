@@ -56,7 +56,7 @@ INSTALL_DIR="$HOME/.local/bin"
 mkdir -p "$INSTALL_DIR"
 
 # GitHub Release URL
-REPO="ly87ing/java-perf-skill"
+REPO="ly87ing/dev-skills"
 RELEASE_URL="https://github.com/$REPO/releases/latest/download/$BINARY"
 
 echo -e "${YELLOW}[1/2] 安装二进制文件...${NC}"

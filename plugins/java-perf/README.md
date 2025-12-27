@@ -45,8 +45,8 @@ Phase 4: 📊 Impact Assessment
 
 ```bash
 # Add marketplace and install
-/plugin marketplace add ly87ing/java-perf-skill
-/plugin install java-perf
+/plugin marketplace add ly87ing/dev-skills
+/plugin install java-perf@dev-skills
 ```
 
 The `SessionStart` hook will automatically check and install the binary on first session.
@@ -54,8 +54,8 @@ The `SessionStart` hook will automatically check and install the binary on first
 ### Option 2: Manual Installation
 
 ```bash
-git clone https://github.com/ly87ing/java-perf-skill.git
-cd java-perf-skill
+git clone https://github.com/ly87ing/dev-skills.git
+cd dev-skills/plugins/java-perf
 ./install.sh
 ```
 
