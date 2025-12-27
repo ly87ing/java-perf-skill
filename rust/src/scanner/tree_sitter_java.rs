@@ -822,8 +822,11 @@ impl JavaTreeSitterAnalyzer {
                 match rule.id {
                     // N+1 检测：支持 for, while, foreach 三种循环
                     "N_PLUS_ONE" | "N_PLUS_ONE_WHILE" | "N_PLUS_ONE_FOREACH" => {
-                        let method_name_idx = rule.query.capture_index_for_name("method_name").unwrap();
-                        let call_idx = rule.query.capture_index_for_name("call").unwrap();
+                        // v9.2: 使用 expect 提供更有意义的错误信息
+                        let method_name_idx = rule.query.capture_index_for_name("method_name")
+                            .expect("N+1 query must have @method_name capture");
+                        let call_idx = rule.query.capture_index_for_name("call")
+                            .expect("N+1 query must have @call capture");
                         let mut method_name_text = String::new();
                         let mut line = 0;
                         
@@ -931,7 +934,8 @@ impl JavaTreeSitterAnalyzer {
                     },
                     // 嵌套循环检测：支持 for-for, for-foreach, foreach-for, foreach-foreach
                     "NESTED_LOOP" | "NESTED_LOOP_MIXED" => {
-                        let inner_loop_idx = rule.query.capture_index_for_name("inner_loop").unwrap();
+                        let inner_loop_idx = rule.query.capture_index_for_name("inner_loop")
+                            .expect("NESTED_LOOP query must have @inner_loop capture");
                         for capture in m.captures {
                             if capture.index == inner_loop_idx {
                                 let line = capture.node.start_position().row + 1;
@@ -948,7 +952,8 @@ impl JavaTreeSitterAnalyzer {
                         }
                     },
                     "SYNC_METHOD" => {
-                        let mods_idx = rule.query.capture_index_for_name("mods").unwrap();
+                        let mods_idx = rule.query.capture_index_for_name("mods")
+                            .expect("SYNC_METHOD query must have @mods capture");
                         for capture in m.captures {
                             if capture.index == mods_idx {
                                 let mods_text = capture.node.utf8_text(code.as_bytes()).unwrap_or("");
@@ -967,9 +972,11 @@ impl JavaTreeSitterAnalyzer {
                         }
                     },
                     "THREADLOCAL_LEAK" => {
-                        let set_call_idx = rule.query.capture_index_for_name("set_call").unwrap();
-                        let var_name_idx = rule.query.capture_index_for_name("var_name").unwrap();
-                        
+                        let set_call_idx = rule.query.capture_index_for_name("set_call")
+                            .expect("THREADLOCAL_LEAK query must have @set_call capture");
+                        let var_name_idx = rule.query.capture_index_for_name("var_name")
+                            .expect("THREADLOCAL_LEAK query must have @var_name capture");
+
                         let mut var_name = String::new();
                         let mut set_node = None;
 
@@ -982,8 +989,7 @@ impl JavaTreeSitterAnalyzer {
                             }
                         }
 
-                        if !var_name.is_empty() && set_node.is_some() {
-                            let node = set_node.unwrap();
+                        if let (false, Some(node)) = (var_name.is_empty(), set_node) {
                             // 向上查找 method_declaration
                             let mut current = node.parent();
                             let mut method_node = None;

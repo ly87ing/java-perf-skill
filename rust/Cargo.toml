@@ -1,9 +1,9 @@
 [package]
 name = "java-perf"
-version = "9.1.0"
+version = "9.2.0"
 edition = "2021"
 authors = ["ly87ing"]
-description = "Java Performance Diagnostics Tool - Pure AST Engine with thread_local Parser"
+description = "Java Performance Diagnostics Tool - RuleHandler Trait & Enhanced SymbolTable"
 license = "MIT"
 repository = "https://github.com/ly87ing/java-perf-skill"
 

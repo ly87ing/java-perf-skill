@@ -5,6 +5,7 @@ use anyhow::Result;
 pub mod tree_sitter_java;
 pub mod config;
 pub mod dockerfile;
+pub mod rule_handlers;  // v9.2: RuleHandler trait 解耦规则处理
 
 /// 严重级别
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
