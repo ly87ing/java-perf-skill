@@ -16,7 +16,7 @@ Developer Skills marketplace for [Claude Code](https://code.claude.com/) - provi
 
 | Plugin | Description | Version |
 |--------|-------------|---------|
-| [java-perf](./plugins/java-perf/) | Java performance diagnostics using AST analysis. Identifies N+1 queries, memory leaks, lock contention, and concurrency risks. | 8.0.0 |
+| [java-perf](./plugins/java-perf/) | Java performance diagnostics using AST analysis. Identifies N+1 queries, memory leaks, lock contention, and concurrency risks. | 8.1.0 |
 
 ## Version Management
 

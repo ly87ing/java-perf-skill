@@ -1,7 +1,7 @@
-# Java Perf v8.0.0 (Rust)
+# Java Perf v8.1.0 (Rust)
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-8.0.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/Version-8.1.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/Language-Rust-orange" alt="Rust">
   <img src="https://img.shields.io/badge/Size-1.9MB-green" alt="Binary Size">
   <img src="https://img.shields.io/badge/Dependencies-Zero-purple" alt="No Dependencies">

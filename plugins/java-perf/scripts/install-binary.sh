@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ============================================
-# Java Perf v8.0.0 - Binary Installation Script
+# Java Perf v8.1.0 - Binary Installation Script
 # ============================================
 # Called by SessionStart hook when plugin session starts.
 # Uses CLAUDE_PLUGIN_ROOT environment variable.
