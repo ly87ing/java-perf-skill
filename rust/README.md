@@ -1,7 +1,7 @@
-# Java Perf v6.0.0 (Rust)
+# Java Perf v9.5.0 (Rust)
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-6.0.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/Version-9.5.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/Language-Rust-orange" alt="Rust">
   <img src="https://img.shields.io/badge/Size-1.9MB-green" alt="Binary Size">
   <img src="https://img.shields.io/badge/Dependencies-Zero-purple" alt="No Dependencies">
@@ -9,7 +9,7 @@
 
 Java 性能诊断 CLI 工具 - **零依赖，单二进制**
 
-> v6.0.0 已移除 MCP 模式，采用纯 CLI + Skill 架构，零配置开箱即用。
+> v9.5.0 特性：CallGraph 污点分析、serde_yaml 配置解析、Query 外部化
 
 ## 🚀 优势
 

@@ -1,6 +1,6 @@
 [package]
 name = "java-perf"
-version = "9.4.0"
+version = "9.5.0"
 edition = "2021"
 authors = ["ly87ing"]
 description = "Java Performance Diagnostics Tool - CallGraph Taint Analysis"

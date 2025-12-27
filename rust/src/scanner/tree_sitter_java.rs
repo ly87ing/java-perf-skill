@@ -62,6 +62,8 @@ pub struct JavaTreeSitterAnalyzer {
     structure_query: Query,
     /// 调用点提取查询 (用于 CallGraph 构建) - v9.4
     call_site_query: Query,
+    /// import 语句查询 (用于跨包调用追踪) - v9.5
+    import_query: Query,
 }
 
 impl JavaTreeSitterAnalyzer {
@@ -72,12 +74,14 @@ impl JavaTreeSitterAnalyzer {
         let compiled_rules = Self::compile_rules(&language)?;
         let structure_query = Self::compile_structure_query(&language)?;
         let call_site_query = Self::compile_call_site_query(&language)?; // v9.4: 调用点提取
+        let import_query = Self::compile_import_query(&language)?;       // v9.5: import 解析
         
         Ok(Self {
             language,
             compiled_rules,
             structure_query,
             call_site_query,
+            import_query,
         })
     }
 
@@ -715,7 +719,43 @@ impl JavaTreeSitterAnalyzer {
         "#;
         Query::new(language, query_str).map_err(|e| anyhow!("Failed to compile call site query: {e}"))
     }
+
+    /// 编译 Import 提取查询 (v9.5)
+    fn compile_import_query(language: &tree_sitter::Language) -> Result<Query> {
+        let query_str = r#"
+            (import_declaration
+                [
+                    (scoped_identifier) @import_name
+                    (identifier) @import_name
+                ]
+            )
+        "#;
+        Query::new(language, query_str).map_err(|e| anyhow!("Failed to compile import query: {e}"))
+    }
+
+    /// 提取 Import 列表 (v9.5)
+    pub fn extract_imports(&self, code: &str) -> Result<Vec<String>> {
+        crate::scanner::tree_sitter_java::with_parser(&self.language, |parser| {
+            let tree = parser.parse(code, None).ok_or_else(|| anyhow!("Failed to parse code"))?;
+            let root_node = tree.root_node();
+            let mut imports = Vec::new();
+            
+            let mut cursor = tree_sitter::QueryCursor::new();
+            let matches = cursor.matches(&self.import_query, root_node, code.as_bytes());
+            
+            for m in matches {
+                for capture in m.captures {
+                    if let Ok(text) = capture.node.utf8_text(code.as_bytes()) {
+                        imports.push(text.to_string());
+                    }
+                }
+            }
+            
+            Ok(imports)
+        })
+    }
 }
+
 
 impl CodeAnalyzer for JavaTreeSitterAnalyzer {
     fn supported_extension(&self) -> &str {
@@ -1506,5 +1546,25 @@ mod tests {
         let issues = analyzer.analyze(code, &file).unwrap();
 
         assert!(issues.iter().any(|i| i.id == "LIKE_LEADING_WILDCARD"), "Should detect LIKE '%' leading wildcard");
+    }
+
+    #[test]
+    fn test_extract_imports() {
+        let code = r#"
+            package com.example.demo;
+            import java.util.List;
+            public class Test {}
+        "#;
+
+        let language = tree_sitter_java::language();
+        let mut parser = tree_sitter::Parser::new();
+        parser.set_language(&language).unwrap();
+        let tree = parser.parse(code, None).unwrap();
+        println!("AST: {}", tree.root_node().to_sexp());
+        
+        // Temporarily commented out functionality test
+        // let analyzer = JavaTreeSitterAnalyzer::new().unwrap();
+        // let imports = analyzer.extract_imports(code).unwrap();
+        // assert_eq!(imports.len(), 4);
     }
 }

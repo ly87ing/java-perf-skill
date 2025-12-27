@@ -1,0 +1,24 @@
+name: Version Check
+
+on:
+  push:
+    paths:
+      - 'rust/Cargo.toml'
+      - 'rust/README.md'
+      - 'rust/CHANGELOG.md'
+      - 'skills/java-perf/SKILL.md'
+  pull_request:
+    paths:
+      - 'rust/Cargo.toml'
+      - 'rust/README.md'
+      - 'rust/CHANGELOG.md'
+      - 'skills/java-perf/SKILL.md'
+
+jobs:
+  version-consistency:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check version consistency
+        run: ./scripts/sync-version.sh --check

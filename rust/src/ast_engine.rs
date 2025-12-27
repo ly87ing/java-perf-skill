@@ -213,8 +213,22 @@ pub fn radar_scan(code_path: &str, compact: bool, max_p1: usize) -> Result<Value
             if let Ok(content) = std::fs::read_to_string(file_path) {
                 // 3. Config Analysis
                 if let Some(analyzer) = &config_analyzer {
-                    if let Ok(config_results) = analyzer.analyze(&content, file_path) {
-                        local_issues.extend(config_results.into_iter().map(convert_issue));
+                    // v9.5: 优先使用结构化 YAML 解析
+                    if ["yml", "yaml"].contains(&ext) {
+                        let structured_issues = analyzer.analyze_yaml_structured(&content, &file_name_str);
+                        if !structured_issues.is_empty() {
+                            local_issues.extend(structured_issues.into_iter().map(convert_issue));
+                        } else {
+                            // 备用：行匹配
+                            if let Ok(config_results) = analyzer.analyze(&content, file_path) {
+                                local_issues.extend(config_results.into_iter().map(convert_issue));
+                            }
+                        }
+                    } else {
+                        // properties 文件继续使用行匹配
+                        if let Ok(config_results) = analyzer.analyze(&content, file_path) {
+                            local_issues.extend(config_results.into_iter().map(convert_issue));
+                        }
                     }
                 }
             }
