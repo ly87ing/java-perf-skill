@@ -37,6 +37,9 @@ pub struct Issue {
     pub severity: Severity,
     pub file: String,
     pub line: usize,
+    /// 精确列位置，用于 JetBrains MCP get_symbol_at_location 调用
+    #[serde(default)]
+    pub column: usize,
     pub description: String,
     pub context: Option<String>,
     /// Confidence level for this issue detection

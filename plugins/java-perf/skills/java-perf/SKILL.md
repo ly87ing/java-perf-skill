@@ -1,7 +1,7 @@
 ---
 name: java-perf
 description: Diagnoses Java performance issues using AST analysis and LSP reasoning. Identifies N+1 queries, memory leaks, lock contention, and concurrency risks. 触发词：性能问题, 分析性能, 性能排查, 性能分析, 性能优化, 响应慢, CPU高, 内存暴涨, 内存溢出, OOM, GC频繁, 连接池满, 线程池满, 超时, 消息积压, 卡顿, 延迟高, 占用高. Keywords: performance issue, slow response, high CPU, memory spike, GC pressure, resource exhaustion, troubleshoot performance, deadlock.
-allowed-tools: Bash, Read, mcp__cclsp__find_definition, mcp__cclsp__find_references
+allowed-tools: Bash, Read, mcp__cclsp__find_definition, mcp__cclsp__find_references, mcp__jetbrains__get_symbol_at_location
 ---
 
 # Java Performance Expert (Radar-Sniper Protocol)
@@ -125,6 +125,21 @@ java-perf scan --path ./
 | 锁竞争 | 临界区内有 IO 吗？ | 检查 synchronized 块内代码 |
 | 无界缓存 | 有 TTL/maximumSize 吗？ | 查找 `.expireAfter`/`.maximumSize` |
 | 嵌套循环 | 集合规模多大？ | 推理 N×M 量级 |
+
+### JetBrains MCP 类型验证（推荐）
+
+对于 `Confidence: Low` 的问题，使用 IDE 精确验证类型：
+
+```
+mcp__jetbrains__get_symbol_at_location({
+  filePath: "报告的文件路径",
+  line: 行号,
+  column: 列号,
+  projectPath: "项目根目录"
+})
+```
+
+IDE 直接返回完整类型信息（含泛型、继承链），无需读取文件。
 
 ---
 
